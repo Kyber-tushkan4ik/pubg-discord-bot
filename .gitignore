@@ -1,0 +1,11 @@
+database.sqlite
+.env
+__pycache__/
+*.pyc
+settings.json
+.gemini/
+.agents/
+.agent/
+brain/
+venv/
+.vscode/
