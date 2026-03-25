@@ -29,9 +29,11 @@ async def process_queue():
     while True:
         task = await queue.get()
         try:
-            await asyncio.wait_for(task(), timeout=45.0)
+            await asyncio.wait_for(task(), timeout=300.0)
+        except asyncio.TimeoutError:
+            create_log(f"[QUEUE ERROR] Task timed out (300s)")
         except Exception as e:
-            create_log(f"[QUEUE ERROR] {e}")
+            create_log(f"[QUEUE ERROR] {type(e).__name__}: {e}")
         finally:
             queue.task_done()
             await asyncio.sleep(CONFIG.get("API_DELAY_MS", 15000) / 1000.0)
