@@ -225,7 +225,7 @@ async def update_stats_and_ranks(client: discord.Client):
                         create_log(f"[RANK] Оновлено {p['pubgNickname']} до {target_role_name} (KD: {kd})")
                     
                     # Спеціальні ролі
-                    await check_special_roles(guild, member, squad_stats, p['pubgNickname'])
+                    await check_special_roles(bot, guild, member, squad_stats, p['pubgNickname'])
                     
                 except Exception as e:
                     print(f"Failed to update member roles: {e}")
@@ -235,9 +235,12 @@ async def update_stats_and_ranks(client: discord.Client):
         
         add_to_queue(task)
 
-async def check_special_roles(guild: discord.Guild, member: discord.Member, stats: dict, nickname: str):
-    special_roles = CONFIG.get("SPECIAL_ROLES")
-    if not special_roles: return
+async def check_special_roles(bot, guild: discord.Guild, member: discord.Member, stats: dict, nickname: str):
+    # Отримуємо конфіг спеціальних ролей
+    special_roles = CONFIG.get("SPECIAL_ROLES", {})
+    
+    # Визначаємо, які ролі заслуговує гравець
+    earned_roles = []
     
     for role_name, criteria in special_roles.items():
         passed = False
@@ -273,13 +276,20 @@ async def check_special_roles(guild: discord.Guild, member: discord.Member, stat
                 passed = True
         
         if passed:
-            role = discord.utils.get(guild.roles, name=role_name)
-            if not role:
-                role = await guild.create_role(name=role_name, reason="Авто-створено спеціальну роль")
+            earned_roles.append(role_name)
+    
+    # Видаємо отримані ролі
+    for role_name in earned_roles:
+        # Отримуємо об'єкт ролі за назвою
+        role = discord.utils.get(guild.roles, name=role_name)
+        if not role:
+            role = await guild.create_role(name=role_name, color=discord.Color.gold())
+            await send_log(bot, f"🆕 Створена нова спеціальна роль: `{role_name}`")
             
-            if role and role not in member.roles:
-                await member.add_roles(role)
-                create_log(f"[SPECIAL] Призначено {role_name} для {nickname}")
+        if role not in member.roles:
+            await member.add_roles(role)
+            await send_log(bot, f"🏆 Гравцю {nickname} видано спеціальну роль: `{role_name}`")
+            create_log(f"[SPECIAL] Призначено {role_name} для {nickname}")
 
 async def check_recent_matches(client: discord.Client):
     create_log('[SCHEDULER] Перевірка нещодавних матчів та досягнень...')
