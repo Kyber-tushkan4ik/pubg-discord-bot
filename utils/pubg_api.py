@@ -21,18 +21,27 @@ if not API_KEY or API_KEY == 'YOUR_PUBG_API_KEY_HERE':
     API_KEY = None
 
 class RateLimiter:
-    """Обмежувач частоти запитів (Token Bucket)."""
+    """Обмежувач частоти запитів (Token Bucket) з лінивою ініціалізацією."""
     def __init__(self, max_calls, period):
         self.max_calls = max_calls
         self.period = period
         self.tokens = max_calls
-        self.last_refill = asyncio.get_event_loop().time()
-        self.lock = asyncio.Lock()
+        self.last_refill = None
+        self.lock = None
 
     async def acquire(self):
+        if self.lock is None:
+            self.lock = asyncio.Lock()
+        
         async with self.lock:
+            loop = asyncio.get_event_loop()
+            now = loop.time()
+            
+            if self.last_refill is None:
+                self.last_refill = now
+                
             while True:
-                now = asyncio.get_event_loop().time()
+                now = loop.time()
                 elapsed = now - self.last_refill
                 # Додаємо токени пропорційно часу
                 refill = elapsed * (self.max_calls / self.period)
