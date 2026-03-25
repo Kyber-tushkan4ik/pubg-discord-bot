@@ -30,6 +30,39 @@ ROLES = {
     "🚗 Водій": "Король доріг, знає кожен поворот на Ерангелі."
 }
 
+QUIZ_POOL = [
+    {
+        "q": "Якою мовою потрібно спілкуватися в загальних чатах?",
+        "correct": "Українською",
+        "wrong": ["Будь-якою", "Англійською"]
+    },
+    {
+        "q": "Куди дозволено (тихенько) кидати фото котів?",
+        "correct": "🎴скриншоти-відео",
+        "wrong": ["Куди завгодно", "Заборонено"]
+    },
+    {
+        "q": "Що потрібно додати до свого нікнейму?",
+        "correct": "Нік з PUBG",
+        "wrong": ["Номер телефону", "Прізвище"]
+    },
+    {
+        "q": "Чи можна рекламувати інші сервери в DM або чатах?",
+        "correct": "Заборонено",
+        "wrong": ["Тільки в DM", "Так, можна"]
+    },
+    {
+        "q": "Які теми обговорень заборонені?",
+        "correct": "Політика та релігія",
+        "wrong": ["Прогноз погоди", "Стратегії в PUBG"]
+    },
+    {
+        "q": "Що робити, якщо хочете стрімити з LFG-лобі?",
+        "correct": "Питати дозволу у всіх",
+        "wrong": ["Просто стрімити", "Питати тільки адміна"]
+    }
+]
+
 class ClanIntroCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -124,7 +157,16 @@ class StartIntroView(discord.ui.View):
     @discord.ui.button(label="🚀 Почати ознайомлення", style=discord.ButtonStyle.success, custom_id="start_intro")
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_id = interaction.user.id
-        self.cog.intro_sessions[user_id] = {"step": 1, "answers": [], "role": None, "voice_done": False, "cmd_done": False}
+        # Обираємо 2 випадкових питання з пулу
+        random_questions = random.sample(QUIZ_POOL, 2)
+        self.cog.intro_sessions[user_id] = {
+            "step": 1, 
+            "questions": random_questions,
+            "answers": [], 
+            "role": None, 
+            "voice_done": False, 
+            "cmd_done": False
+        }
         await self.send_step(interaction, 1)
 
     async def send_step(self, interaction: discord.Interaction, step: int):
@@ -132,12 +174,12 @@ class StartIntroView(discord.ui.View):
         session = self.cog.intro_sessions[user_id]
         
         progress = (step / 5) * 100
-        progress_bar = "▓" * (step * 2) + "░" * ((5 - step) * 2)
-        
-        fact = random.choice(CLAN_FACTS)
+        # Коригуємо візуальний прогрес для 2.5 (друге питання)
+        display_step = step if step <= 5 else 2.5
+        progress_bar = "▓" * int(display_step * 2) + "░" * int((5 - display_step) * 2)
         
         embed = discord.Embed(color=0x3498db)
-        embed.set_footer(text=f"Прогрес: {progress_bar} {progress:.0f}%")
+        embed.set_footer(text=f"Прогрес: {progress_bar} {min(100, progress):.0f}%")
         
         if step == 1:
             embed.title = "📜 Крок 1: Правила нашого сервера"
@@ -163,13 +205,15 @@ class StartIntroView(discord.ui.View):
             embed.description = rules_text
             view = QuizView(self.cog, step)
         elif step == 2:
+            q_data = session["questions"][0]
             embed.title = "❓ Крок 2: Перевірка знань (1/2)"
-            embed.description = "**Запитання:** Якою мовою потрібно спілкуватися в загальних чатах сервера?"
-            view = QuizView(self.cog, step)
-        elif step == 25: # Dynamic handling in QuizView
+            embed.description = f"**Запитання:** {q_data['q']}"
+            view = QuizView(self.cog, step, q_data)
+        elif step == 25:
+            q_data = session["questions"][1]
             embed.title = "❓ Крок 2: Перевірка знань (2/2)"
-            embed.description = "**Запитання:** Куди дозволено (але тихенько) кидати фото котів?"
-            view = QuizView(self.cog, 25)
+            embed.description = f"**Запитання:** {q_data['q']}"
+            view = QuizView(self.cog, 25, q_data)
         elif step == 3:
             embed.title = "🎭 Крок 3: Ваша роль у грі"
             embed.description = "Виберіть свою спеціалізацію. Це допоможе іншим швидше знаходити напарників."
@@ -198,18 +242,23 @@ class StartIntroView(discord.ui.View):
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 class QuizView(discord.ui.View):
-    def __init__(self, cog, step):
+    def __init__(self, cog, step, q_data=None):
         super().__init__(timeout=120)
         self.cog = cog
         self.step = step
-        if step == 2:
-            self.add_item(discord.ui.Button(label="Українською", style=discord.ButtonStyle.success, custom_id="ans_correct_1"))
-            self.add_item(discord.ui.Button(label="Будь-якою", style=discord.ButtonStyle.secondary, custom_id="ans_wrong"))
-            self.add_item(discord.ui.Button(label="Англійською", style=discord.ButtonStyle.secondary, custom_id="ans_wrong"))
-        elif step == 25: # Друге питання вікторини
-            self.add_item(discord.ui.Button(label="🎴скриншоти-відео", style=discord.ButtonStyle.success, custom_id="ans_correct_2"))
-            self.add_item(discord.ui.Button(label="Куди завгодно", style=discord.ButtonStyle.secondary, custom_id="ans_wrong_cat"))
-            self.add_item(discord.ui.Button(label="Заборонено", style=discord.ButtonStyle.danger, custom_id="ans_wrong_cat"))
+        
+        if step in [2, 25] and q_data:
+            options = [
+                {"label": q_data["correct"], "style": discord.ButtonStyle.success, "cid": f"correct_{step}"}
+            ]
+            for i, w in enumerate(q_data["wrong"]):
+                options.append({"label": w, "style": discord.ButtonStyle.secondary, "cid": f"wrong_{step}_{i}"})
+            
+            # Рандомізуємо порядок кнопок
+            random.shuffle(options)
+            
+            for opt in options:
+                self.add_item(discord.ui.Button(label=opt["label"], style=opt["style"], custom_id=opt["cid"]))
 
     @discord.ui.button(label="Наступний крок", style=discord.ButtonStyle.primary)
     async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -218,15 +267,15 @@ class QuizView(discord.ui.View):
 
     async def interaction_check(self, interaction: discord.Interaction):
         cid = interaction.data.get("custom_id")
-        if cid == "ans_correct_1":
-            await interaction.response.send_message("✅ Правильно! Українська — мова нашого сервера.", ephemeral=True)
+        if cid == "correct_2":
+            await interaction.response.send_message("✅ Правильно!", ephemeral=True)
             await StartIntroView(self.cog).send_step(interaction, 25)
             return False
-        elif cid == "ans_correct_2":
-            await interaction.response.send_message("✅ Правильно! Але робіть це тихенько... 🤫😻", ephemeral=True)
+        elif cid == "correct_25":
+            await interaction.response.send_message("✅ Правильно! Останній ривок.", ephemeral=True)
             await StartIntroView(self.cog).send_step(interaction, 3)
             return False
-        elif cid in ["ans_wrong", "ans_wrong_cat"]:
+        elif "wrong" in cid:
             await interaction.response.send_message("❌ Неправильно! Будь ласка, перечитайте правила ще раз.", ephemeral=True)
             return False
         return True
