@@ -66,9 +66,9 @@ class RateLimiter:
                     wait_time = (1 - self.tokens) / (self.max_calls / self.period)
                     await asyncio.sleep(wait_time)
 
-# Глобальний лімітер: 9 запитів на 60 секунд (з запасом для надійності)
+# Глобальний лімітер: 5 запитів на 60 секунд (знижено для уникнення 429)
 # Додано min_delay=2.0 для уникнення 429 при серійних запитах
-_limiter = RateLimiter(max_calls=9, period=60, min_delay=2.0)
+_limiter = RateLimiter(max_calls=5, period=60, min_delay=2.0)
 
 _session = None
 
