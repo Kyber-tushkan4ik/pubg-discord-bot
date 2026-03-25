@@ -49,6 +49,23 @@ class ClanIntroCog(commands.Cog):
         await interaction.response.send_message("Панель встановлена.", ephemeral=True)
         await interaction.channel.send(embed=embed, view=view)
 
+    @app_commands.command(name="send_intro", description="Надіслати запрошення до ознайомлення учаснику (Адмін)")
+    @app_commands.describe(member="Учасник, якому надіслати запрошення")
+    @is_admin()
+    async def send_intro(self, interaction: discord.Interaction, member: discord.Member):
+        embed = discord.Embed(
+            title="👋 Привіт! Запрошуємо до ознайомлення",
+            description=f"{member.mention}, адміністрація просить тебе пройти невелике ознайомлення з нашим кланом, щоб отримати повний доступ до всіх каналів.\n\nНатисніть кнопку нижче, щоб почати!",
+            color=0xFFD700
+        )
+        view = StartIntroView(self)
+        try:
+            await member.send(embed=embed, view=view)
+            await interaction.response.send_message(f"✅ Запрошення успішно надіслано учаснику {member.mention} в особисті повідомлення.", ephemeral=True)
+            await send_log(self.bot, f"🔔 Адмін {interaction.user.mention} надіслав персональне запрошення до ознайомлення для {member.mention}")
+        except Exception:
+            await interaction.response.send_message(f"❌ Не вдалося надіслати повідомлення {member.mention}. Можливо, у нього закриті приватні повідомлення.", ephemeral=True)
+
     async def finish_intro(self, member: discord.Member):
         await handle_success(member)
 
