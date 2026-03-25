@@ -7,7 +7,7 @@ import re
 import sqlite3
 
 from utils.data_handler import get_data, save_data, get_settings
-from utils.core import check_user, handle_success, send_log
+from utils.core import handle_success, send_log
 from utils.helpers import create_log, ms_to_readable, get_record_key, find_record
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../config.json')
