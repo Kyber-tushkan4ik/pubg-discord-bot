@@ -159,3 +159,9 @@
 [2026-03-23 21:04:38] [NICKNAME] Missing 'manage_nicknames' permission in Клановий сервер rusNI_peaceDA   UA (app_permissions)
 [2026-03-23 21:17:18] [MATCH] Обробка 2 матчів для Dvachasa
 [2026-03-23 21:22:10] [MATCH] Обробка 2 матчів для CHORNA_PANTERA
+[2026-03-25 15:11:26] [SCHEDULER] Завдання ініціалізовано.
+[2026-03-25 15:11:26] [SCHEDULER] Перевірка неактивності...
+[2026-03-25 15:11:26] [SCHEDULER] Перевірка нещодавних матчів та досягнень...
+[2026-03-25 15:11:26] [SCHEDULER] Оновлення рангів...
+[2026-03-25 15:20:21] [SUCCESS] ren.byaku (ID: 904281774484521003) passed clan introduction.
+[2026-03-25 15:20:22] [DM SENT] To: ren.byaku Content: 🎉 Ознайомлення завершено!
