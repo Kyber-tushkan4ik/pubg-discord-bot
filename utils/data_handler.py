@@ -10,6 +10,7 @@ SETTINGS_FILE = os.path.join(os.path.dirname(__file__), '../settings.json')
 user_data = {}
 bot_settings = {"ytmSource": None}
 _is_saving = False
+_dirty_keys = set()
 
 def init_db():
     global user_data
@@ -69,10 +70,16 @@ def init_db():
             print(f"[DataHandler] Failed to parse JSON for key {key}: {e}")
             
     user_data = new_user_data
+    _dirty_keys.clear()
     print(f"[DataHandler] Loaded {count} users.")
     
     conn.commit()
     conn.close()
+
+def mark_dirty(key):
+    """Помічає дані користувача як змінені."""
+    global _dirty_keys
+    _dirty_keys.add(key)
 
 def load_settings():
     global bot_settings
@@ -90,14 +97,16 @@ def get_settings():
     return bot_settings
 
 def save_data_sync():
-    global _is_saving
-    if _is_saving:
+    global _is_saving, _dirty_keys
+    if _is_saving or not _dirty_keys:
         return
     _is_saving = True
     
-    # Snapshot
-    snapshot = json.loads(json.dumps(user_data))
-    if not snapshot:
+    # Снепшот тільки змінених ключів
+    to_save = {k: user_data[k] for k in list(_dirty_keys) if k in user_data}
+    _dirty_keys.clear()
+    
+    if not to_save:
         _is_saving = False
         return
         
@@ -106,7 +115,7 @@ def save_data_sync():
         cursor = conn.cursor()
         cursor.execute("BEGIN TRANSACTION")
         
-        for key, user in snapshot.items():
+        for key, user in to_save.items():
             u_id = user.get("userId")
             g_id = user.get("guildId")
             

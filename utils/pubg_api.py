@@ -112,6 +112,22 @@ async def get_player(nickname: str):
         print(f"Error fetching player '{nickname}': {e}")
         return None
 
+async def get_players_batch(nicknames: list):
+    """Отримує дані для групи гравців (до 10 осіб одним запитом)."""
+    if not nicknames:
+        return []
+        
+    names_str = ",".join(nicknames[:10])
+    url = f"{BASE_URL}/players?filter[playerNames]={names_str}"
+    try:
+        data = await fetch(url)
+        if data and "data" in data:
+            return data["data"] # Повертає список об'єктів гравців
+        return []
+    except Exception as e:
+        print(f"Error fetching players batch {nicknames[:10]}: {e}")
+        return []
+
 async def get_player_season_stats(player_id: str, season_id: str = "lifetime"):
     """Отримує статистику сезону гравця."""
     url = f"{BASE_URL}/players/{player_id}/seasons/{season_id}"
