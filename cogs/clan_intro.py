@@ -140,20 +140,36 @@ class StartIntroView(discord.ui.View):
         embed.set_footer(text=f"Прогрес: {progress_bar} {progress:.0f}%")
         
         if step == 1:
-            embed.title = "📜 Крок 1: Наша Місія та Правила"
-            embed.description = (
-                "Ми — спільнота гравців, які цінують взаємодопомогу та адекватне спілкування.\n\n"
-                "**Основні правила:**\n"
-                "1. Поважай тіммейтів.\n"
-                "2. Не використовуй чити.\n"
-                "3. Слухай капітана під час матчу.\n\n"
-                f"*Цікавий факт: {fact}*"
+            embed.title = "📜 Крок 1: Правила нашого сервера"
+            rules_text = (
+                "1. **Нікнейм:** Змініть ім'я або додайте ігровий нік з PUBG у дужках.\n"
+                "2. **Ввічливість:** Будьте ввічливі та дружні до всіх.\n"
+                "3. **Конфлікти:** Жодних політики, релігії чи конфліктних дискусій.\n"
+                "4. **Повага:** Ніякої мови ненависті чи дискримінації.\n"
+                "5. **Реклама:** Заборонена реклама інших серверів/сайтів (чат та DM).\n"
+                "6. **Спам:** Заборонено спам та надмірний оффтоп.\n"
+                "7. **Лайка:** Ніякої надмірної лайки (публічний сервер).\n"
+                "8. **Фейки:** Не видавайте себе за інших членів або розробників.\n"
+                "9. **Мова:** Загальні канали — тільки **Українською мовою**.\n"
+                "10. **Піратство:** Не обговорюйте піратство та реселерів ключів.\n"
+                "11. **Чити:** Заборонено продаж читів/хаків.\n"
+                "12. **Попрошайництво:** Не просіть купити або подарувати гру.\n"
+                "13. **Стріми:** Питайте дозволу перед записом відео в LFG-лобі.\n"
+                "14. **Боти:** Не спамте ботами у невідведених чатах.\n"
+                "15. **Медіа:** Відео та скріншоти — у відповідні чати.\n"
+                "16. **Коти:** Дозволено (тихенько) кидати фото котів у 🎴скриншоти чи 📸фото.\n\n"
+                "Прочитали? Натисніть кнопку нижче!"
             )
+            embed.description = rules_text
             view = QuizView(self.cog, step)
         elif step == 2:
-            embed.title = "❓ Крок 2: Невеличка вікторина"
-            embed.description = "Дайте відповідь на запитання, щоб ми знали, що ви прочитали правила.\n\n**Запитання:** Що заборонено використовувати в нашому клані?"
+            embed.title = "❓ Крок 2: Перевірка знань (1/2)"
+            embed.description = "**Запитання:** Якою мовою потрібно спілкуватися в загальних чатах сервера?"
             view = QuizView(self.cog, step)
+        elif step == 25: # Dynamic handling in QuizView
+            embed.title = "❓ Крок 2: Перевірка знань (2/2)"
+            embed.description = "**Запитання:** Куди дозволено (але тихенько) кидати фото котів?"
+            view = QuizView(self.cog, 25)
         elif step == 3:
             embed.title = "🎭 Крок 3: Ваша роль у грі"
             embed.description = "Виберіть свою спеціалізацію. Це допоможе іншим швидше знаходити напарників."
@@ -187,9 +203,13 @@ class QuizView(discord.ui.View):
         self.cog = cog
         self.step = step
         if step == 2:
-            self.add_item(discord.ui.Button(label="Чити", style=discord.ButtonStyle.danger, custom_id="ans_wrong"))
-            self.add_item(discord.ui.Button(label="Мікрофон", style=discord.ButtonStyle.secondary, custom_id="ans_wrong2"))
-            self.add_item(discord.ui.Button(label="Заборонене ПЗ", style=discord.ButtonStyle.success, custom_id="ans_correct"))
+            self.add_item(discord.ui.Button(label="Українською", style=discord.ButtonStyle.success, custom_id="ans_correct_1"))
+            self.add_item(discord.ui.Button(label="Будь-якою", style=discord.ButtonStyle.secondary, custom_id="ans_wrong"))
+            self.add_item(discord.ui.Button(label="Англійською", style=discord.ButtonStyle.secondary, custom_id="ans_wrong"))
+        elif step == 25: # Друге питання вікторини
+            self.add_item(discord.ui.Button(label="🎴скриншоти-відео", style=discord.ButtonStyle.success, custom_id="ans_correct_2"))
+            self.add_item(discord.ui.Button(label="Куди завгодно", style=discord.ButtonStyle.secondary, custom_id="ans_wrong_cat"))
+            self.add_item(discord.ui.Button(label="Заборонено", style=discord.ButtonStyle.danger, custom_id="ans_wrong_cat"))
 
     @discord.ui.button(label="Наступний крок", style=discord.ButtonStyle.primary)
     async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -197,12 +217,17 @@ class QuizView(discord.ui.View):
             await StartIntroView(self.cog).send_step(interaction, 2)
 
     async def interaction_check(self, interaction: discord.Interaction):
-        if interaction.data.get("custom_id") == "ans_correct":
-            await interaction.response.send_message("✅ Правильно!", ephemeral=True)
+        cid = interaction.data.get("custom_id")
+        if cid == "ans_correct_1":
+            await interaction.response.send_message("✅ Правильно! Українська — мова нашого сервера.", ephemeral=True)
+            await StartIntroView(self.cog).send_step(interaction, 25)
+            return False
+        elif cid == "ans_correct_2":
+            await interaction.response.send_message("✅ Правильно! Але робіть це тихенько... 🤫😻", ephemeral=True)
             await StartIntroView(self.cog).send_step(interaction, 3)
             return False
-        elif interaction.data.get("custom_id") == "ans_wrong" or interaction.data.get("custom_id") == "ans_wrong2":
-            await interaction.response.send_message("❌ Спробуйте ще раз! Згадайте правила про чити та ПЗ.", ephemeral=True)
+        elif cid in ["ans_wrong", "ans_wrong_cat"]:
+            await interaction.response.send_message("❌ Неправильно! Будь ласка, перечитайте правила ще раз.", ephemeral=True)
             return False
         return True
 
