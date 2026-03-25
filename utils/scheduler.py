@@ -241,35 +241,34 @@ async def check_special_roles(guild: discord.Guild, member: discord.Member, stat
     
     for role_name, criteria in special_roles.items():
         passed = False
-        # Використовуємо startswith для підтримки імен з суфіксами, наприклад "Медик (Стат)"
-        if role_name.startswith('Медик'):
+        if role_name == 'Санітар':
             if stats.get('revives', 0) >= criteria.get('revives', 15) or stats.get('heals', 0) >= criteria.get('heals', 80):
                 passed = True
-        elif role_name.startswith('Головоріз'):
+        elif role_name == 'Ліквідатор':
             ratio = stats.get('headshotKills', 0) / stats.get('kills', 1) if stats.get('kills', 0) > 0 else 0
             if stats.get('kills', 0) >= criteria.get('minKills', 10) and ratio >= criteria.get('headshotRatio', 0.25):
                 passed = True
-        elif role_name.startswith('Термінатор'):
+        elif role_name == 'Берсерк':
             avg_dmg = stats.get('damageDealt', 0) / stats.get('roundsPlayed', 1) if stats.get('roundsPlayed', 0) > 0 else 0
             if avg_dmg >= criteria.get('avgDamage', 250):
                 passed = True
-        elif role_name.startswith('Асистент'):
+        elif role_name == 'Бойовий товариш':
             if stats.get('assists', 0) >= criteria.get('assists', 5):
                 passed = True
-        elif role_name.startswith('Водій'):
+        elif role_name == 'Перевізник':
             if stats.get('rideDistance', 0) >= criteria.get('rideDistance', 50000):
                 passed = True
-        elif role_name.startswith('Скажений Макс'):
+        elif role_name == 'Скажений Макс (Стат)':
             if stats.get('roadKills', 0) >= criteria.get('roadKills', 5):
                 passed = True
-        elif role_name.startswith('Мандрівник'):
+        elif role_name == 'Скаут':
             if stats.get('walkDistance', 0) >= criteria.get('walkDistance', 25000):
                 passed = True
-        elif role_name.startswith('Виживач'):
+        elif role_name == 'Вцілілий':
             ratio = stats.get('top10s', 0) / stats.get('roundsPlayed', 1) if stats.get('roundsPlayed', 0) > 0 else 0
             if stats.get('roundsPlayed', 0) >= criteria.get('minRounds', 10) and ratio >= criteria.get('top10Ratio', 0.25):
                 passed = True
-        elif role_name.startswith('Задрот'):
+        elif role_name == 'Затятий гравець':
             if stats.get('roundsPlayed', 0) >= criteria.get('roundsPlayed', 250):
                 passed = True
         

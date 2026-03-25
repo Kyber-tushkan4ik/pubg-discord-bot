@@ -307,19 +307,6 @@ class RoleView(discord.ui.View):
                 # Шукаємо існуючу роль
                 target_role = discord.utils.get(guild.roles, name=clean_name)
                 
-                # Перевірка на конфлікт з ролями-досягненнями (якщо вони ще не перейменовані в самому Дискорді)
-                # Якщо роль існує, але вона має бути статистичною за логікою юзера - перейменовуємо її
-                for stat_role_base in ["Медик", "Водій", "Головоріз", "Термінатор"]:
-                    if clean_name == stat_role_base:
-                        # Якщо ми знайшли "Медик", але це має бути роль гравця, 
-                        # то існуючу (стару статистичну) перейменовуємо в "Медик (Стат)"
-                        if target_role:
-                            new_stat_name = f"{stat_role_base} (Стат)"
-                            if not discord.utils.get(guild.roles, name=new_stat_name):
-                                await target_role.edit(name=new_stat_name)
-                                await send_log(self.cog.bot, f"🔄 Роль `{stat_role_base}` перейменована в `{new_stat_name}` для уникнення конфлікту.")
-                                target_role = None # Створимо нову чисту роль для гравця
-                
                 if not target_role:
                     # Створюємо роль, якщо її немає
                     target_role = await guild.create_role(name=clean_name, color=discord.Color.blue(), mentionable=True)
