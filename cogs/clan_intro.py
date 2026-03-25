@@ -34,6 +34,53 @@ class ClanIntroCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.intro_sessions = {} # user_id -> state
+        self.auto_invite_task = self.bot.loop.create_task(self.auto_invite_loop())
+
+    async def auto_invite_loop(self):
+        """Фонова задача для автоматичного запрошення людей з роллю Адаптація."""
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            try:
+                user_data = get_data()
+                role_name = CONFIG.get("ROLE_ADAPT")
+                
+                for guild in self.bot.guilds:
+                    role = discord.utils.get(guild.roles, name=role_name)
+                    if not role: continue
+                    
+                    for member in role.members:
+                        if member.bot: continue
+                        user_id = str(member.id)
+                        guild_id = str(guild.id)
+                        key = f"{user_id}_{guild_id}"
+                        
+                        record = user_data.get(key) or user_data.get(user_id)
+                        # Якщо людини немає в БД або вона ще не проходила ознайомлення
+                        if not record or (not record.get("intro_started") and not record.get("intro_done")):
+                            await self.send_intro_dm(member)
+                            if not record:
+                                user_data[key] = {"username": str(member), "userId": user_id, "guildId": guild_id}
+                                record = user_data[key]
+                            record["intro_started"] = True
+                            await save_data()
+                            await asyncio.sleep(2) # Затримка проти спаму
+                            
+            except Exception as e:
+                print(f"Error in auto_invite_loop: {e}")
+            
+            await asyncio.sleep(3600) # Перевірка раз на годину
+
+    async def send_intro_dm(self, member: discord.Member):
+        embed = discord.Embed(
+            title="👋 Помітили, що ти ще не пройшов ознайомлення",
+            description=f"Привіт, {member.mention}! У тебе є роль **Адаптація**, але ти ще не скористався нашою новою системою ознайомлення.\n\nБудь ласка, натисни кнопку нижче, щоб швидко пройти квест та отримати повний доступ!",
+            color=0x3498db
+        )
+        view = StartIntroView(self)
+        try:
+            await member.send(embed=embed, view=view)
+        except:
+            pass
 
     @app_commands.command(name="intro_setup", description="Встановити панель ознайомлення (Адмін)")
     @is_admin()
