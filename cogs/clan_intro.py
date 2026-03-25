@@ -116,11 +116,19 @@ class ClanIntroCog(commands.Cog):
             description="Щоб стати повноправним учасником та отримати доступ до всіх каналів, пройдіть невелике ознайомлення.\n\nНатисніть кнопку нижче, щоб почати!",
             color=0xFFD700
         )
-        embed.set_image(url="https://i.imgur.com/qg9b9dE.png") # Замініть на реальне фото клану
+        # Оновлюємо зображення на локальне для стабільності
+        img_path = os.path.join(os.path.dirname(__file__), '../assets/clan_welcome.png')
+        file = None
+        if os.path.exists(img_path):
+            file = discord.File(img_path, filename="clan_welcome.png")
+            embed.set_image(url="attachment://clan_welcome.png")
         
         view = StartIntroView(self)
         await interaction.response.send_message("Панель встановлена.", ephemeral=True)
-        await interaction.channel.send(embed=embed, view=view)
+        if file:
+            await interaction.channel.send(embed=embed, view=view, file=file)
+        else:
+            await interaction.channel.send(embed=embed, view=view)
 
     @app_commands.command(name="send_intro", description="Надіслати запрошення до ознайомлення учаснику (Адмін)")
     @app_commands.describe(member="Учасник, якому надіслати запрошення")
