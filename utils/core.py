@@ -39,7 +39,7 @@ async def handle_success(member: discord.Member):
         )
         embed.add_field(name='🏆 Нова роль', value=f'**{CONFIG.get("ROLE_SUCCESS")}**', inline=False)
         embed.set_thumbnail(url=member.display_avatar.url if member.display_avatar else None)
-        embed.set_footer(text='PUBG Bot System')
+        embed.set_footer(text='Ти молодець🤗')
         
         try:
             await member.send(embed=embed)
