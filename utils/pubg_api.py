@@ -21,12 +21,14 @@ if not API_KEY or API_KEY == 'YOUR_PUBG_API_KEY_HERE':
     API_KEY = None
 
 class RateLimiter:
-    """Обмежувач частоти запитів (Token Bucket) з лінивою ініціалізацією."""
-    def __init__(self, max_calls, period):
+    """Обмежувач частоти запитів (Token Bucket) з лінивою ініціалізацією та захистом від імпульсів."""
+    def __init__(self, max_calls, period, min_delay=1.5):
         self.max_calls = max_calls
         self.period = period
+        self.min_delay = min_delay
         self.tokens = max_calls
         self.last_refill = None
+        self.last_call = 0
         self.lock = None
 
     async def acquire(self):
@@ -35,13 +37,19 @@ class RateLimiter:
         
         async with self.lock:
             loop = asyncio.get_event_loop()
-            now = loop.time()
             
-            if self.last_refill is None:
-                self.last_refill = now
-                
             while True:
                 now = loop.time()
+                
+                if self.last_refill is None:
+                    self.last_refill = now
+                
+                # Захист від занадто частих запитів (Burst Protection)
+                time_since_last = now - self.last_call
+                if time_since_last < self.min_delay:
+                    await asyncio.sleep(self.min_delay - time_since_last)
+                    continue # Перераховуємо токени після сну
+
                 elapsed = now - self.last_refill
                 # Додаємо токени пропорційно часу
                 refill = elapsed * (self.max_calls / self.period)
@@ -51,14 +59,16 @@ class RateLimiter:
                 
                 if self.tokens >= 1:
                     self.tokens -= 1
+                    self.last_call = loop.time()
                     return
                 else:
                     # Чекаємо поки з'явиться хоча б 1 токен
                     wait_time = (1 - self.tokens) / (self.max_calls / self.period)
                     await asyncio.sleep(wait_time)
 
-# Глобальний лімітер: 10 запитів на 60 секунд (з запасом для надійності)
-_limiter = RateLimiter(max_calls=9, period=60)
+# Глобальний лімітер: 9 запитів на 60 секунд (з запасом для надійності)
+# Додано min_delay=2.0 для уникнення 429 при серійних запитах
+_limiter = RateLimiter(max_calls=9, period=60, min_delay=2.0)
 
 _session = None
 

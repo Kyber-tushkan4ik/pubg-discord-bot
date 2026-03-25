@@ -18,8 +18,14 @@ with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
 
 queue = asyncio.Queue()
 _first_match_scan_done = False
+_queue_worker_started = False
 
 async def process_queue():
+    global _queue_worker_started
+    if _queue_worker_started:
+        return
+    _queue_worker_started = True
+    
     while True:
         task = await queue.get()
         try:
@@ -43,7 +49,8 @@ async def send_log(bot, message):
         await channel.send(f"📋 {message}")
 
 def init_scheduler(client: discord.Client):
-    client.loop.create_task(process_queue())
+    if not _queue_worker_started:
+        client.loop.create_task(process_queue())
     
     @tasks.loop(hours=24)
     async def daily_tasks():

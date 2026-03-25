@@ -28,6 +28,7 @@ class PubgBot(commands.Bot):
             intents=intents,
             help_command=None
         )
+        self.is_initialized = False
 
     async def global_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         if isinstance(error, app_commands.CheckFailure):
@@ -74,8 +75,10 @@ async def on_ready():
         print(f'[ПОМИЛКА] Не вдалося синхронізувати команди: {e}')
     
     # Ініціалізація планувальника та сканування
-    init_scheduler(bot)
-    await perform_startup_scan(bot)
+    if not bot.is_initialized:
+        init_scheduler(bot)
+        await perform_startup_scan(bot)
+        bot.is_initialized = True
 
 if __name__ == '__main__':
     if TOKEN:
