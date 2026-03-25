@@ -293,9 +293,46 @@ class RoleView(discord.ui.View):
         async def callback(interaction: discord.Interaction):
             user_id = interaction.user.id
             self.cog.intro_sessions[user_id]["role"] = role_name
-            # Тут можна було б реально видавати роль у Discord, якщо вона існує
-            await interaction.response.send_message(f"✅ Ви обрали роль: {role_name}", ephemeral=True)
-            await StartIntroView(self.cog).send_step(interaction, 4)
+            
+            guild = interaction.guild
+            member = interaction.user
+            
+            # Очищуємо саму назву ролі від емодзі для пошуку/створення
+            clean_name = role_name.split(" ", 1)[-1] if " " in role_name else role_name
+            
+            await interaction.response.defer(ephemeral=True)
+            
+            try:
+                # Шукаємо існуючу роль
+                target_role = discord.utils.get(guild.roles, name=clean_name)
+                
+                # Перевірка на конфлікт з ролями-досягненнями (якщо вони ще не перейменовані в самому Дискорді)
+                # Якщо роль існує, але вона має бути статистичною за логікою юзера - перейменовуємо її
+                for stat_role_base in ["Медик", "Водій", "Головоріз", "Термінатор"]:
+                    if clean_name == stat_role_base:
+                        # Якщо ми знайшли "Медик", але це має бути роль гравця, 
+                        # то існуючу (стару статистичну) перейменовуємо в "Медик (Стат)"
+                        if target_role:
+                            new_stat_name = f"{stat_role_base} (Стат)"
+                            if not discord.utils.get(guild.roles, name=new_stat_name):
+                                await target_role.edit(name=new_stat_name)
+                                await send_log(self.cog.bot, f"🔄 Роль `{stat_role_base}` перейменована в `{new_stat_name}` для уникнення конфлікту.")
+                                target_role = None # Створимо нову чисту роль для гравця
+                
+                if not target_role:
+                    # Створюємо роль, якщо її немає
+                    target_role = await guild.create_role(name=clean_name, color=discord.Color.blue(), mentionable=True)
+                    await send_log(self.cog.bot, f"🆕 Створено нову ігрову роль: `{clean_name}`")
+                
+                # Видаємо роль
+                await member.add_roles(target_role)
+                await interaction.followup.send(f"✅ Вам видано роль: **{role_name}**", ephemeral=True)
+                await StartIntroView(self.cog).send_step(interaction, 4)
+                
+            except Exception as e:
+                print(f"Error giving role: {e}")
+                await interaction.followup.send(f"❌ Не вдалося видати роль. Перевірте мої права (Manage Roles).", ephemeral=True)
+                
         return callback
 
 class CheckTaskView(discord.ui.View):
