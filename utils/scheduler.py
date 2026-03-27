@@ -170,67 +170,12 @@ async def update_stats_and_ranks(bot):
                     if not entry: continue
                     key, p = entry
                     
-                    stats = await get_player_season_stats(pubg_data["id"], 'lifetime')
-                    if not stats or "attributes" not in stats: continue
-                    
-                    gm_stats = stats["attributes"]["gameModeStats"]
-                    squad_stats = gm_stats.get('squad-fpp') or gm_stats.get('squad') or gm_stats.get('squadFPP')
-                    if not squad_stats: continue
-                    
-                    # Оновлення даних
-                    kills = squad_stats.get('kills', 0)
-                    deaths = squad_stats.get('losses', 1) or 1
-                    wins = squad_stats.get('wins', 0)
-                    rounds = squad_stats.get('roundsPlayed', 1) or 1
-                    damage = squad_stats.get('damageDealt', 0)
-                    kd = round(kills / deaths, 2)
-                    
-                    p["kd"] = kd
-                    p["wins"] = wins
-                    p["rounds"] = rounds
-                    p["totalKills"] = kills
-                    p["avgDamage"] = round(damage / rounds, 0)
-                    mark_dirty(key)
-                    await save_data()
-                    
-                    # Оновлення ролей
-                    u_id = p.get("userId")
-                    g_id = p.get("guildId")
-                    if not u_id or p.get("isExternal"): continue
-                    guild = bot.get_guild(int(g_id))
-                    if not guild: continue
-                    
-                    # Оптимізація: спочатку пробуємо get_member (кеш)
-                    member = guild.get_member(int(u_id))
-                    if not member:
-                        try:
-                            member = await guild.fetch_member(int(u_id))
-                        except: continue
-                    if not member: continue
-                    
-                    rank_roles = CONFIG.get("RANK_ROLES", {})
-                    target_role_name = "Новачок"
-                    for role_name, min_kd in sorted(rank_roles.items(), key=lambda x: x[1], reverse=True):
-                        if kd >= min_kd:
-                            target_role_name = role_name
-                            break
-                    
-                    if not any(r.name == target_role_name for r in member.roles):
-                        role_obj = discord.utils.get(guild.roles, name=target_role_name)
-                        if not role_obj:
-                            role_obj = await guild.create_role(name=target_role_name)
-                        
-                        to_remove = [r for r in member.roles if r.name in rank_roles and r.name != target_role_name]
-                        if to_remove: await member.remove_roles(*to_remove)
-                        await member.add_roles(role_obj)
-                        create_log(f"[RANK] {p['pubgNickname']} -> {target_role_name}")
-
-                    await check_special_roles(bot, guild, member, squad_stats, p['pubgNickname'])
+                    await process_single_player_stats_and_ranks(bot, key, p, pubg_data)
                 except Exception as e:
                     create_log(f"[ERROR STATS BATCH] {e}")
         add_to_queue(batch_task)
 
-async def check_special_roles(bot, guild, member, stats, nickname):
+async def check_special_roles(bot, guild, member, stats, nickname, debug_channel=None):
     special_roles = CONFIG.get("SPECIAL_ROLES", {})
     earned_roles = []
     
@@ -269,6 +214,31 @@ async def check_special_roles(bot, guild, member, stats, nickname):
             await member.add_roles(role)
             await send_log(bot, f"🏆 Гравцю {nickname} видано роль: `{role_name}`")
             create_log(f"[SPECIAL] {nickname} -> {role_name}")
+            if debug_channel: await debug_channel.send(f"🎖️ **Видано спецроль**: {role_name}")
+            
+    # Автоматичне видалення старих (замінених) ролей
+    deprecated = {
+        "Медик": "Санітар",
+        "Головоріз": "Ліквідатор",
+        "Термінатор": "Ліквідатор",
+        "Асистент": "Бойовий товариш",
+        "Водій": "Перевізник",
+        "Водій (Стат)": "Перевізник",
+        "Мандрівник": "Скаут",
+        "Виживач": "Вцілілий",
+        "Задрот": "Затятий гравець",
+        "Скажений Макс": "Скажений Макс (Стат)"
+    }
+    
+    for old_name, new_name in deprecated.items():
+        if new_name in earned_roles or any(r.name == new_name for r in member.roles):
+            old_role = discord.utils.get(guild.roles, name=old_name)
+            if old_role and old_role in member.roles:
+                await member.remove_roles(old_role)
+                create_log(f"[CLEANUP] Removed {old_name} from {nickname} because they have {new_name}")
+    
+    if debug_channel and not earned_roles:
+        await debug_channel.send("🔍 Жодних нових спеціальних ролей не виявлено.")
 
 async def check_recent_matches(client: discord.Client):
     global _first_match_scan_done
@@ -290,71 +260,217 @@ async def check_recent_matches(client: discord.Client):
             pubg_players = await get_players_batch(nicks)
             for pubg_data in pubg_players:
                 try:
-                    p_id = pubg_data["id"]
                     p_nick_low = pubg_data["attributes"]["name"].lower()
                     entry = next((e for e in b if e[1]["pubgNickname"].lower() == p_nick_low), None)
                     if not entry: continue
                     key, p = entry
                     
-                    matches = pubg_data.get("relationships", {}).get("matches", {}).get("data", [])
-                    if not matches: continue
+                    # Викликаємо спільну функцію обробки
+                    await process_single_player_matches(client, key, p, pubg_data, is_quiet=q)
                     
-                    new_matches = []
-                    last_checked = p.get("lastCheckedMatchId")
-                    for m in matches:
-                        if m["id"] == last_checked: break
-                        new_matches.append(m["id"])
-                    
-                    if not new_matches: continue
-                    
-                    # Запам'ятовуємо останній матч ВІДРАЗУ
-                    p["lastCheckedMatchId"] = new_matches[0]
-                    mark_dirty(key)
-                    await save_data()
-                    
-                    if q:
-                        create_log(f"[MATCH] Тихе оновлення для {p['pubgNickname']} ({len(new_matches)} матчів)")
-                        continue
-
-                    for mid in reversed(new_matches[:5]):
-                        try:
-                            match = await get_match(mid)
-                            if not match or "data" not in match: continue
-                            
-                            try:
-                                c_at_str = match["data"]["attributes"]["createdAt"]
-                                c_at = datetime.fromisoformat(c_at_str.replace('Z', '+00:00'))
-                                if (datetime.now(timezone.utc) - c_at).total_seconds() > 7200: continue
-                            except: pass
-
-                            stats = None
-                            for inc in match.get("included", []):
-                                if inc["type"] == 'participant' and inc.get("attributes", {}).get("stats", {}).get("playerId") == p_id:
-                                    stats = inc["attributes"]["stats"]
-                                    break
-                            
-                            if stats:
-                                if stats.get("winPlace") == 1:
-                                    mention = f"<@{p['userId']}>" if p.get('userId') and not p.get('isExternal') else f"**{p['pubgNickname']}**"
-                                    if win_channel:
-                                        embed = discord.Embed(title='🍗 ПЕРЕМОГА!', description=f'**{p["pubgNickname"]}** виграв матч!', color=0xFFCC00)
-                                        embed.add_field(name='💀 Вбивств', value=str(stats.get('kills', 0)), inline=True)
-                                        embed.add_field(name='🎯 Шкода', value=str(round(stats.get('damageDealt', 0))), inline=True)
-                                        await win_channel.send(content=f"🎉 Вітаємо {mention}!", embed=embed)
-                                    create_log(f"[WIN] {p['pubgNickname']} переміг!")
-                                
-                                if p.get("userId"):
-                                    await check_achievements(client, p["userId"], p["pubgNickname"], stats, win_channel_id)
-                                await check_records(p, stats)
-                                
-                                p["weeklyWins"] = p.get("weeklyWins", 0) + (1 if stats.get("winPlace") == 1 else 0)
-                                p["weeklyKills"] = p.get("weeklyKills", 0) + stats.get("kills", 0)
-                                p["monthlyWins"] = p.get("monthlyWins", 0) + (1 if stats.get("winPlace") == 1 else 0)
-                                p["monthlyKills"] = p.get("monthlyKills", 0) + stats.get("kills", 0)
-                                mark_dirty(key)
-                        except Exception as e:
-                            create_log(f"[ERROR MATCH PROC] {p['pubgNickname']} {mid}: {e}")
-                    await save_data()
                 except Exception as e:
                     create_log(f"[ERROR BATCH MATCH] {e}")
         add_to_queue(batch_task)
+
+async def process_single_player_matches(client: discord.Client, key, p, pubg_data, is_quiet=False, debug_channel=None):
+    """
+    Обробляє нові матчі для одного гравця.
+    Якщо вказано debug_channel, туди будуть надсилатися детальні звіти.
+    """
+    p_id = pubg_data["id"]
+    p_nickname = pubg_data["attributes"]["name"]
+    
+    relationships = pubg_data.get("relationships", {})
+    matches_data = relationships.get("matches", {})
+    matches = matches_data.get("data", [])
+    
+    if not matches:
+        if debug_channel: await debug_channel.send(f"🔍 Гравця **{p_nickname}**: Матчів не знайдено.")
+        return 0
+
+    new_matches = []
+    last_checked = p.get("lastCheckedMatchId")
+    for m in matches:
+        if m["id"] == last_checked: break
+        new_matches.append(m["id"])
+
+    if not new_matches:
+        if debug_channel: await debug_channel.send(f"🔍 Гравця **{p_nickname}**: Нових матчів немає (останній перевірений: `{last_checked}`).")
+        return 0
+
+    # Запам'ятовуємо останній матч ВІДРАЗУ
+    p["lastCheckedMatchId"] = new_matches[0]
+    mark_dirty(key)
+    await save_data()
+
+    if is_quiet:
+        create_log(f"[MATCH] Тихе оновлення для {p_nickname} ({len(new_matches)} матчів)")
+        if debug_channel: await debug_channel.send(f"🤫 Гравця **{p_nickname}**: Тихе оновлення ({len(new_matches)} матчів).")
+        return len(new_matches)
+
+    win_channel_id = CONFIG.get("WIN_NOTIF_CHANNEL_ID")
+    win_channel = client.get_channel(int(win_channel_id)) if win_channel_id else None
+    
+    processed_count = 0
+    for mid in reversed(new_matches[:5]):
+        try:
+            match = await get_match(mid)
+            if not match or "data" not in match: 
+                if debug_channel: await debug_channel.send(f"⚠️ Не вдалося отримати деталі матчу `{mid}`.")
+                continue
+            
+            # Перевірка свіжості матчу (тільки якщо не дебаг)
+            if not debug_channel:
+                try:
+                    c_at_str = match["data"]["attributes"]["createdAt"]
+                    c_at = datetime.fromisoformat(c_at_str.replace('Z', '+00:00'))
+                    if (datetime.now(timezone.utc) - c_at).total_seconds() > 7200: 
+                        continue
+                except: pass
+
+            stats = None
+            for inc in match.get("included", []):
+                if inc["type"] == 'participant' and inc.get("attributes", {}).get("stats", {}).get("playerId") == p_id:
+                    stats = inc["attributes"]["stats"]
+                    break
+            
+            if stats:
+                processed_count += 1
+                if debug_channel:
+                    msg = (f"🎮 **Знайдено матч** `{mid}`:\n"
+                           f"• Місце: **{stats.get('winPlace')}**\n"
+                           f"• Вбивств: **{stats.get('kills')}**\n"
+                           f"• Шкода: **{round(stats.get('damageDealt'))}**")
+                    await debug_channel.send(msg)
+
+                if stats.get("winPlace") == 1:
+                    mention = f"<@{p['userId']}>" if p.get('userId') and not p.get('isExternal') else f"**{p_nickname}**"
+                    if win_channel:
+                        embed = discord.Embed(title='🍗 ПЕРЕМОГА!', description=f'**{p_nickname}** виграв матч!', color=0xFFCC00)
+                        embed.add_field(name='💀 Вбивств', value=str(stats.get('kills', 0)), inline=True)
+                        embed.add_field(name='🎯 Шкода', value=str(round(stats.get('damageDealt', 0))), inline=True)
+                        await win_channel.send(content=f"🎉 Вітаємо {mention}!", embed=embed)
+                    create_log(f"[WIN] {p_nickname} переміг!")
+                
+                if p.get("userId"):
+                    await check_achievements(client, p["userId"], p_nickname, stats, win_channel_id)
+                await check_records(p, stats)
+                
+                # Оновлення тижневої/місячної статистики
+                p["weeklyWins"] = p.get("weeklyWins", 0) + (1 if stats.get("winPlace") == 1 else 0)
+                p["weeklyKills"] = p.get("weeklyKills", 0) + stats.get("kills", 0)
+                p["monthlyWins"] = p.get("monthlyWins", 0) + (1 if stats.get("winPlace") == 1 else 0)
+                p["monthlyKills"] = p.get("monthlyKills", 0) + stats.get("kills", 0)
+                mark_dirty(key)
+                
+        except Exception as e:
+            create_log(f"[ERROR MATCH PROC] {p_nickname} {mid}: {e}")
+            if debug_channel: await debug_channel.send(f"❌ Помилка обробки матчу `{mid}`: {e}")
+            
+    await save_data()
+    return processed_count
+
+async def process_single_player_stats_and_ranks(bot, key, p, pubg_data, debug_channel=None):
+    """
+    Оновлює статистику (Lifetime) та ранги для одного гравця.
+    """
+    p_nickname = pubg_data["attributes"]["name"]
+    try:
+        stats = await get_player_season_stats(pubg_data["id"], 'lifetime')
+        if not stats or "attributes" not in stats:
+            if debug_channel: await debug_channel.send(f"⚠️ Не вдалося отримати Lifetime статистику для **{p_nickname}**.")
+            return
+
+        gm_stats = stats["attributes"]["gameModeStats"]
+        squad_stats = gm_stats.get('squad-fpp') or gm_stats.get('squad') or gm_stats.get('squadFPP')
+        if not squad_stats:
+            if debug_channel: await debug_channel.send(f"🔍 Гравця **{p_nickname}**: Немає даних для режиму Squad.")
+            return
+
+        # Оновлення даних
+        kills = squad_stats.get('kills', 0)
+        deaths = squad_stats.get('losses', 1) or 1
+        wins = squad_stats.get('wins', 0)
+        rounds = squad_stats.get('roundsPlayed', 1) or 1
+        damage = squad_stats.get('damageDealt', 0)
+        kd = round(kills / deaths, 2)
+
+        p["kd"] = kd
+        p["wins"] = wins
+        p["rounds"] = rounds
+        p["totalKills"] = kills
+        p["avgDamage"] = round(damage / rounds, 0)
+        mark_dirty(key)
+        await save_data()
+        
+        if debug_channel:
+            await debug_channel.send(f"📈 **Оновлено статистику** ({p_nickname}):\n• K/D: **{kd}**\n• Wins: **{wins}**\n• Avg Dmg: **{p['avgDamage']}**")
+
+        # Оновлення ролей
+        u_id = p.get("userId")
+        g_id = p.get("guildId")
+        
+        # Fallback: пробуємо розпарсити ключ, якщо дані відсутні
+        if not u_id or not g_id:
+            if '-' in str(key):
+                parts = str(key).split('-')
+                if not u_id: u_id = parts[0]
+                if not g_id: g_id = parts[1]
+            else:
+                # Якщо ключ - це просто userId (старий формат)
+                if not u_id: u_id = str(key)
+        
+        if not u_id:
+            if debug_channel: await debug_channel.send("⚠️ Не вдалося визначити Discord ID користувача для оновлення ролей.")
+            return
+            
+        if p.get("isExternal"):
+            if debug_channel: await debug_channel.send("ℹ️ Гравець є зовнішнім (External), ролі Discord не оновлюються.")
+            return
+
+        guild = None
+        if g_id:
+            guild = bot.get_guild(int(g_id))
+        
+        if not guild and debug_channel:
+            # Спробуємо взяти гільдію з каналу дебагу, якщо g_id не знайдено
+            guild = debug_channel.guild
+            
+        if not guild:
+            if debug_channel: await debug_channel.send(f"⚠️ Не вдалося знайти сервер (Guild ID: {g_id}) для оновлення ролей.")
+            return
+        
+        member = guild.get_member(int(u_id))
+        if not member:
+            try: 
+                member = await guild.fetch_member(int(u_id))
+            except: 
+                if debug_channel: await debug_channel.send(f"⚠️ Користувача з ID `{u_id}` не знайдено на сервері.")
+                return
+        
+        if not member: return
+
+        rank_roles = CONFIG.get("RANK_ROLES", {})
+        target_role_name = "Новачок"
+        for role_name, min_kd in sorted(rank_roles.items(), key=lambda x: x[1], reverse=True):
+            if kd >= min_kd:
+                target_role_name = role_name
+                break
+        
+        if not any(r.name == target_role_name for r in member.roles):
+            role_obj = discord.utils.get(guild.roles, name=target_role_name)
+            if not role_obj:
+                role_obj = await guild.create_role(name=target_role_name)
+            
+            to_remove = [r for r in member.roles if r.name in rank_roles and r.name != target_role_name]
+            if to_remove: await member.remove_roles(*to_remove)
+            await member.add_roles(role_obj)
+            create_log(f"[RANK] {p_nickname} -> {target_role_name}")
+            if debug_channel: await debug_channel.send(f"🎖️ **Оновлено ранг**: {target_role_name}")
+        else:
+            if debug_channel: await debug_channel.send(f"🎖️ Ранг вже актуальний: {target_role_name}")
+
+        await check_special_roles(bot, guild, member, squad_stats, p_nickname, debug_channel=debug_channel)
+    except Exception as e:
+        create_log(f"[ERROR SINGLE STATS] {p_nickname}: {e}")
+        if debug_channel: await debug_channel.send(f"❌ Помилка оновлення рангів: {e}")

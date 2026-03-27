@@ -8,7 +8,7 @@ from utils.data_handler import get_data, save_data, get_settings, save_settings,
 from utils.pubg_api import get_player
 from utils.helpers import get_record_key, find_record, create_log, is_admin
 from utils.moderation import add_warning, clear_warnings
-from utils.scheduler import check_recent_matches, update_stats_and_ranks, send_weekly_report, check_inactivity
+from utils.scheduler import check_recent_matches, update_stats_and_ranks, send_weekly_report, check_inactivity, process_single_player_matches, process_single_player_stats_and_ranks
 import time
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../config.json')
@@ -42,12 +42,12 @@ class AdminCog(commands.Cog):
             
             if not record:
                 user_data[key] = {
-                    "username": str(target_user),
-                    "userId": user_id,
-                    "guildId": guild_id
+                    "username": str(target_user)
                 }
                 record = user_data[key]
                 
+            record["userId"] = user_id
+            record["guildId"] = guild_id
             real_name = player.get("attributes", {}).get("name", nickname)
             record["pubgNickname"] = real_name
             await save_data()
@@ -390,6 +390,333 @@ class AdminCog(commands.Cog):
         except Exception as e:
             create_log(f"Error debug_run: {e}")
             await interaction.edit_original_response(content=f"❌ Помилка при виконанні завдання: {e}")
+
+    @app_commands.command(name="debug_player", description="Детальна перевірка матчів конкретного гравця (Адмін)")
+    @app_commands.describe(target="Користувач для перевірки")
+    @is_admin()
+    async def debug_player(self, interaction: discord.Interaction, target: discord.Member):
+        await interaction.response.defer(ephemeral=False)
+        
+        user_data = get_data()
+        record = find_record(user_data, str(target.id), str(interaction.guild.id))
+        
+        if not record or not record.get("pubgNickname"):
+            await interaction.followup.send(f"❌ У користувача {target.mention} немає прив'язаного PUBG нікнейму.")
+            return
+            
+        nickname = record.get("pubgNickname")
+        await interaction.followup.send(f"🔍 Починаю перевірку для **{nickname}**...")
+        
+        try:
+            # Знаходимо ключ запису в базі
+            key = get_record_key(str(target.id), str(interaction.guild.id))
+            
+            # Отримуємо дані з API
+            pubg_player = await get_player(nickname)
+            if not pubg_player:
+                await interaction.followup.send(f"❌ Не вдалося знайти гравця **{nickname}** через PUBG API.")
+                return
+            
+            # Запускаємо процес обробки матчів
+            count = await process_single_player_matches(
+                self.bot, 
+                key, 
+                record, 
+                pubg_player, 
+                is_quiet=False, 
+                debug_channel=interaction.channel
+            )
+            
+            # Також перевіряємо статистику та ранги
+            await process_single_player_stats_and_ranks(
+                self.bot,
+                key,
+                record,
+                pubg_player,
+                debug_channel=interaction.channel
+            )
+            
+            await interaction.followup.send(f"✅ Перевірку завершено. Оброблено нових матчів: **{count}**.")
+            
+        except Exception as e:
+            create_log(f"Error debug_player: {e}")
+            await interaction.followup.send(f"❌ Сталася помилка під час дебагу: {e}")
+
+    @app_commands.command(name="admin_cleanup_roles", description="Очищення та міграція старих ролей (Медик -> Санітар тощо)")
+    @is_admin()
+    async def admin_cleanup_roles(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        mapping = {
+            "Медик": "Санітар",
+            "Головоріз": "Ліквідатор",
+            "Термінатор": "Ліквідатор",
+            "Асистент": "Бойовий товариш",
+            "Водій": "Перевізник",
+            "Водій (Стат)": "Перевізник",
+            "Мандрівник": "Скаут",
+            "Виживач": "Вцілілий",
+            "Задрот": "Затятий гравець",
+            "Скажений Макс": "Скажений Макс (Стат)"
+        }
+        
+        guild = interaction.guild
+        changes = []
+        
+        for old_name, new_name in mapping.items():
+            old_role = discord.utils.get(guild.roles, name=old_name)
+            if not old_role:
+                continue
+                
+            new_role = discord.utils.get(guild.roles, name=new_name)
+            
+            try:
+                if new_role:
+                    # Якщо обидві ролі існують, переносимо людей і видаляємо стару
+                    count = 0
+                    for member in old_role.members:
+                        if new_role not in member.roles:
+                            await member.add_roles(new_role)
+                            count += 1
+                    
+                    await old_role.delete(reason="Міграція статичних ролей")
+                    changes.append(f"✅ Об'єднано `{old_name}` ➔ `{new_name}` (перенесено {count} осіб)")
+                else:
+                    # Якщо нової немає, просто перейменовуємо стару
+                    await old_role.edit(name=new_name, reason="Міграція статичних ролей")
+                    changes.append(f"📝 Перейменовано `{old_name}` ➔ `{new_name}`")
+            except Exception as e:
+                changes.append(f"❌ Помилка з `{old_name}`: {e}")
+                
+        if not changes:
+            await interaction.followup.send("🔍 Старих ролей для міграції не знайдено.")
+        else:
+            msg = "**📜 Результати міграції ролей:**\n" + "\n".join(changes)
+            if len(msg) > 2000:
+                await interaction.followup.send("✅ Міграцію завершено. Перевірте логи.")
+            else:
+                await interaction.followup.send(msg)
+
+    @app_commands.command(name="admin_help", description="Текстова довідка по адмін-командах")
+    @is_admin()
+    async def admin_help(self, interaction: discord.Interaction):
+        """Відображає старий текстовий список усіх адміністративних команд."""
+        embed = discord.Embed(
+            title="📖 Довідка адмін-команд",
+            description="Список усіх команд для швидкого копіювання:",
+            color=0x2f3136
+        )
+        
+        embed.add_field(
+            name="🎮 Менеджмент гравців",
+            value="`/admin_link`, `/admin_unlink`, `/add_external`, `/remove_external`"
+        )
+        embed.add_field(
+            name="📈 Адаптація та активність",
+            value="`/manage_tracking user/role`, `/clan_tracking`, `/warn_inactive`, `/top_active`"
+        )
+        embed.add_field(
+            name="🛡️ Модерація",
+            value="`/mod warn`, `/mod clear_warns`"
+        )
+        embed.add_field(
+            name="👋 Ознайомлення",
+            value="`/intro_setup`, `/send_intro`"
+        )
+        embed.add_field(
+            name="⚙️ Система",
+            value="`/debug_player`, `/debug_run`, `/admin_cleanup_roles`, `/ytm_sync`"
+        )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="admin", description="Інтерактивна консоль управління Помічницею")
+    @is_admin()
+    async def admin_menu(self, interaction: discord.Interaction):
+        """Відкриває інтерактивне меню з категоріями."""
+        view = AdminMenuView(self.bot, interaction.user)
+        embed = view.get_main_embed(interaction.guild)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+# --- Interactive View Components ---
+
+class AdminSelect(discord.ui.Select):
+    def __init__(self, bot):
+        options = [
+            discord.SelectOption(label="Головна", emoji="🏠", value="main", description="Статистика бота та огляд"),
+            discord.SelectOption(label="Активність", emoji="📈", value="activity", description="Стеження, неактивні, топи"),
+            discord.SelectOption(label="Гравці", emoji="👥", value="players", description="Link/Unlink, зовнішні гравці"),
+            discord.SelectOption(label="Модерація", emoji="🛡️", value="mod", description="Попередження, очищення"),
+            discord.SelectOption(label="Ознайомлення", emoji="👋", value="intro", description="Налаштування панелі, запрошення"),
+            discord.SelectOption(label="Система", emoji="⚙️", value="system", description="Дебаг, ранги, очищення ролей")
+        ]
+        super().__init__(placeholder="Оберіть категорію...", min_values=1, max_values=1, options=options, row=0)
+        self.bot = bot
+
+    async def callback(self, interaction: discord.Interaction):
+        view: 'AdminMenuView' = self.view
+        view.current_category = self.values[0]
+        await view.update_view(interaction)
+
+class AdminUserSelect(discord.ui.UserSelect):
+    def __init__(self):
+        super().__init__(placeholder="Оберіть користувача для дій...", min_values=1, max_values=1, row=1)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: 'AdminMenuView' = self.view
+        view.selected_user = self.values[0]
+        await interaction.response.defer(ephemeral=True)
+
+class AdminButton(discord.ui.Button):
+    def __init__(self, label, style, custom_id, row=2, emoji=None):
+        super().__init__(label=label, style=style, custom_id=custom_id, row=row, emoji=emoji)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: 'AdminMenuView' = self.view
+        await view.handle_button(interaction, self.custom_id)
+
+class AdminMenuView(discord.ui.View):
+    def __init__(self, bot, user):
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.user = user
+        self.current_category = "main"
+        self.selected_user = None
+        self.add_item(AdminSelect(bot))
+
+    def get_main_embed(self, guild):
+        user_data = get_data()
+        linked = [u for u in user_data.values() if u.get("pubgNickname")]
+        ext = [u for u in user_data.values() if u.get("isExternal") or (u.get("userId") and str(u.get("userId")).startswith('ext_'))]
+        
+        embed = discord.Embed(
+            title="📋 Меню команд Помічниці",
+            description="Оберіть **категорію** з меню нижче, щоб керувати ботом.",
+            color=0x2f3136
+        )
+        if self.bot.user.avatar: embed.set_thumbnail(url=self.bot.user.avatar.url)
+        embed.add_field(name="📊 База", value=f"👥 Гравців: `{len(linked)}`\n🌐 Зовнішніх: `{len(ext)}`", inline=True)
+        embed.add_field(name="🛰️ Система", value=f"⚡ Ping: `{round(self.bot.latency * 1000)}ms`\n🏠 Сервер: `{guild.name}`", inline=True)
+        embed.set_footer(text=f"Запит від {self.user.display_name} • Активне 2 хв", icon_url=self.user.display_avatar.url)
+        return embed
+
+    async def update_view(self, interaction: discord.Interaction):
+        # Очищуємо старі кнопки/селектори крім основного категорійного
+        for item in [i for i in self.children if not isinstance(i, AdminSelect)]:
+            self.remove_item(item)
+        
+        embed = None
+        if self.current_category == "main":
+            embed = self.get_main_embed(interaction.guild)
+        elif self.current_category == "activity":
+            embed = discord.Embed(title="📈 Адаптація та активність", description="Керування стеженням та перевірка неактивних.", color=0x3498db)
+            self.add_item(AdminButton("Топ активних", discord.ButtonStyle.primary, "top_active", emoji="🏆"))
+            self.add_item(AdminButton("Перевірка неактивних", discord.ButtonStyle.secondary, "warn_inactive", emoji="📨"))
+        elif self.current_category == "players":
+            embed = discord.Embed(title="👥 Менеджмент гравців", description="Спочатку оберіть користувача, потім дію.", color=0x2ecc71)
+            self.add_item(AdminUserSelect())
+            self.add_item(AdminButton("Прив'язати", discord.ButtonStyle.success, "btn_link", row=2))
+            self.add_item(AdminButton("Відв'язати", discord.ButtonStyle.danger, "btn_unlink", row=2))
+            self.add_item(AdminButton("Додати зовнішнього", discord.ButtonStyle.secondary, "btn_add_ext", row=3))
+        elif self.current_category == "mod":
+            embed = discord.Embed(title="🛡️ Модерація", description="Оберіть користувача для видачі варну.", color=0xe74c3c)
+            self.add_item(AdminUserSelect())
+            self.add_item(AdminButton("Видати Warn", discord.ButtonStyle.danger, "btn_warn"))
+            self.add_item(AdminButton("Очистити Warns", discord.ButtonStyle.secondary, "btn_clear_warns"))
+        elif self.current_category == "intro":
+            embed = discord.Embed(title="👋 Ознайомлення", description="Налаштування вітальної панелі.", color=0x9b59b6)
+            self.add_item(AdminButton("Встановити панель", discord.ButtonStyle.success, "btn_intro_setup"))
+            self.add_item(AdminButton("Надіслати DM", discord.ButtonStyle.primary, "btn_send_intro"))
+        elif self.current_category == "system":
+            embed = discord.Embed(title="⚙️ Система та Дебаг", description="Технічне обслуговування бота.", color=0x95a5a6)
+            self.add_item(AdminButton("Дебаг гравця", discord.ButtonStyle.primary, "btn_debug_player"))
+            self.add_item(AdminButton("Міграція ролей", discord.ButtonStyle.danger, "btn_cleanup"))
+            self.add_item(AdminButton("Ручний запуск", discord.ButtonStyle.secondary, "btn_debug_run"))
+
+        if not embed:
+            embed = discord.Embed(title="⚠️ Помилка", description="Не вдалося завантажити вміст категорії.", color=0xFF0000)
+
+        embed.set_footer(text=f"Категорія: {self.current_category} • Запит від {interaction.user.display_name}")
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def handle_button(self, interaction: discord.Interaction, custom_id):
+        admin_cog: 'AdminCog' = self.bot.get_cog("AdminCog")
+        intro_cog = self.bot.get_cog("ClanIntroCog")
+        
+        # Команди без потреби в користувачі або зі складним вводом
+        if custom_id == "top_active":
+            await admin_cog.top_active.callback(admin_cog, interaction)
+        elif custom_id == "btn_cleanup":
+            await admin_cog.admin_cleanup_roles.callback(admin_cog, interaction)
+        elif custom_id == "btn_intro_setup":
+            if intro_cog: await intro_cog.intro_setup.callback(intro_cog, interaction)
+            else: await interaction.response.send_message("Cog 'ClanIntroCog' не знайдено.", ephemeral=True)
+        
+        # Команди що потребують обраного користувача
+        elif custom_id in ["btn_link", "btn_unlink", "btn_warn", "btn_clear_warns", "btn_send_intro", "btn_debug_player"]:
+            if not self.selected_user:
+                await interaction.response.send_message("❌ Спочатку оберіть користувача у списку вище!", ephemeral=True)
+                return
+            
+            if custom_id == "btn_link":
+                await interaction.response.send_modal(AdminLinkModal(admin_cog, self.selected_user))
+            elif custom_id == "btn_unlink":
+                await admin_cog.admin_unlink.callback(admin_cog, interaction, self.selected_user)
+            elif custom_id == "btn_warn":
+                await interaction.response.send_modal(AdminWarnModal(admin_cog, self.selected_user))
+            elif custom_id == "btn_clear_warns":
+                await admin_cog.mod_clear_warns.callback(admin_cog, interaction, self.selected_user)
+            elif custom_id == "btn_debug_player":
+                await admin_cog.debug_player.callback(admin_cog, interaction, self.selected_user)
+            elif custom_id == "btn_send_intro":
+                if intro_cog: await intro_cog.send_intro.callback(intro_cog, interaction, self.selected_user)
+                else: await interaction.response.send_message("Cog 'ClanIntroCog' не знайдено.", ephemeral=True)
+        
+        # Інші модальні вікна або спеціальні логіки
+        elif custom_id == "btn_add_ext":
+            await interaction.response.send_modal(AdminAddExternalModal(admin_cog))
+        elif custom_id == "warn_inactive":
+            await interaction.response.send_modal(AdminWarnInactiveModal(admin_cog))
+        elif custom_id == "btn_debug_run":
+            await interaction.response.send_message("Використовуйте `/debug_run` безпосередньо для вибору завдання.", ephemeral=True)
+
+# --- Modals for Data Entry ---
+
+class AdminLinkModal(discord.ui.Modal, title="Прив'язка PUBG профілю"):
+    nickname = discord.ui.TextInput(label="PUBG Нікнейм", placeholder="Введіть нікнейм точно як у грі", min_length=3, max_length=20)
+    def __init__(self, cog, target):
+        super().__init__()
+        self.cog = cog
+        self.target = target
+    async def on_submit(self, interaction: discord.Interaction):
+        await self.cog.admin_link.callback(self.cog, interaction, self.target, self.nickname.value)
+
+class AdminWarnModal(discord.ui.Modal, title="Видача попередження"):
+    reason = discord.ui.TextInput(label="Причина", style=discord.TextStyle.paragraph, placeholder="За що видається попередження?", max_length=200)
+    def __init__(self, cog, target):
+        super().__init__()
+        self.cog = cog
+        self.target = target
+    async def on_submit(self, interaction: discord.Interaction):
+        await self.cog.mod_warn.callback(self.cog, interaction, self.target, self.reason.value)
+
+class AdminAddExternalModal(discord.ui.Modal, title="Додати зовнішнього гравця"):
+    nickname = discord.ui.TextInput(label="PUBG Нікнейм", placeholder="Нікнейм гравця клану")
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+    async def on_submit(self, interaction: discord.Interaction):
+        await self.cog.add_external.callback(self.cog, interaction, self.nickname.value)
+
+class AdminWarnInactiveModal(discord.ui.Modal, title="Попередження неактивних"):
+    days = discord.ui.TextInput(label="Днів неактивності", default="14", min_length=1, max_length=3)
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+    async def on_submit(self, interaction: discord.Interaction):
+        try: d = int(self.days.value)
+        except: d = 14
+        await self.cog.warn_inactive.callback(self.cog, interaction, d, False)
 
 async def setup(bot):
     await bot.add_cog(AdminCog(bot))

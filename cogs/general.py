@@ -86,12 +86,12 @@ class GeneralCog(commands.Cog):
             
             if not record:
                 user_data[key] = {
-                    "username": str(interaction.user),
-                    "userId": user_id,
-                    "guildId": guild_id
+                    "username": str(interaction.user)
                 }
                 record = user_data[key]
                 
+            record["userId"] = user_id
+            record["guildId"] = guild_id
             record["pubgNickname"] = real_name
             await save_data()
             
