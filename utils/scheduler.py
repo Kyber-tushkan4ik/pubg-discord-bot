@@ -79,6 +79,21 @@ def init_scheduler(client: discord.Client):
             settings["lastWeeklyResetDate"] = today_str
             await save_settings()
             create_log("[SCHEDULER] Тижневу статистику скинуто.")
+
+        # Щомісячний звіт та скидання (1-ше число)
+        if time.localtime().tm_mday == 1 and settings.get("lastMonthlyReportDate") != today_str:
+            await send_monthly_report(client)
+            settings["lastMonthlyReportDate"] = today_str
+            
+            # Скидання місячної статистики
+            user_data = get_data()
+            for p in user_data.values():
+                p["monthlyWins"] = 0
+                p["monthlyKills"] = 0
+            await save_data()
+            settings["lastMonthlyResetDate"] = today_str
+            await save_settings()
+            create_log("[SCHEDULER] Місячний звіт надіслано, статистику скинуто.")
             
     @tasks.loop(minutes=60)
     async def hourly_tasks():
@@ -112,18 +127,67 @@ def init_scheduler(client: discord.Client):
 async def send_weekly_report(client):
     create_log('[SCHEDULER] Генерування щотижневого звіту...')
     user_data = get_data()
-    players = [p for p in user_data.values() if p.get("pubgNickname")]
+    players = [p for p in user_data.values() if p.get("pubgNickname") and (p.get("weeklyWins", 0) > 0 or p.get("weeklyKills", 0) > 0)]
     if not players: return
     
-    report_ch_id = CONFIG.get("WEEKLY_REPORT_CHANNEL_ID")
+    report_ch_id = CONFIG.get("WEEKLY_REPORT_CHANNEL_ID") or CONFIG.get("LOG_CHANNEL_ID")
     if not report_ch_id: return
     report_ch = client.get_channel(int(report_ch_id))
     if not report_ch: return
     
-    active = sorted(players, key=lambda p: p.get("weeklyKills", 0), reverse=True)[:5]
-    embed = discord.Embed(title='📊 ТОП-5 Гравців Тижня (Kills)', color=0x0099ff)
-    for i, p in enumerate(active):
-        embed.add_field(name=f"{i+1}. {p['pubgNickname']}", value=f"Вбивств: {p.get('weeklyKills', 0)}, Перемог: {p.get('weeklyWins', 0)}", inline=False)
+    # Сортування: Перемоги, потім вбивства
+    players.sort(key=lambda p: (p.get("weeklyWins", 0), p.get("weeklyKills", 0)), reverse=True)
+    
+    embed = discord.Embed(
+        title='🍗 Тиждень виживання завершено!',
+        description="Хто тут з'їв найбільше курки?\n\n",
+        color=0xFFA500
+    )
+    
+    table = "```\n#  Гравець          🏆  💀\n"
+    table += "----------------------------\n"
+    for i, p in enumerate(players[:10]):
+        medal = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else f"{i+1}."
+        nick = p['pubgNickname'][:14].ljust(14)
+        wins = str(p.get("weeklyWins", 0)).rjust(2)
+        kills = str(p.get("weeklyKills", 0)).rjust(3)
+        table += f"{medal.ljust(2)} {nick} {wins} {kills}\n"
+    table += "```"
+    
+    embed.description += table
+    embed.set_footer(text="Підсумки за останній тиждень.")
+    await report_ch.send(embed=embed)
+
+async def send_monthly_report(client):
+    create_log('[SCHEDULER] Генерування щомісячного звіту...')
+    user_data = get_data()
+    players = [p for p in user_data.values() if p.get("pubgNickname") and (p.get("monthlyWins", 0) > 0 or p.get("monthlyKills", 0) > 0)]
+    if not players: return
+    
+    report_ch_id = CONFIG.get("WEEKLY_REPORT_CHANNEL_ID") or CONFIG.get("LOG_CHANNEL_ID")
+    report_ch = client.get_channel(int(report_ch_id))
+    if not report_ch: return
+    
+    players.sort(key=lambda p: (p.get("monthlyWins", 0), p.get("monthlyKills", 0)), reverse=True)
+    
+    embed = discord.Embed(
+        title='🦖 Наш УАЗік проїхав ще один місяць!',
+        description="Ось список пасажирів-чемпіонів:\n\n",
+        color=0x3498DB
+    )
+    
+    table = "```\n#  Гравець          🏆  💀\n"
+    table += "----------------------------\n"
+    for i, p in enumerate(players[:15]):
+        medal = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else f"{i+1}."
+        nick = p['pubgNickname'][:14].ljust(14)
+        wins = str(p.get("monthlyWins", 0)).rjust(2)
+        kills = str(p.get("monthlyKills", 0)).rjust(3)
+        table += f"{medal.ljust(2)} {nick} {wins} {kills}\n"
+    table += "```"
+    
+    embed.description += table
+    embed.set_footer(text=f"Підсумки за {time.strftime('%B %Y')}")
     await report_ch.send(embed=embed)
 
 async def check_inactivity(client):

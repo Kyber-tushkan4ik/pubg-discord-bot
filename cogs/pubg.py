@@ -21,6 +21,51 @@ DB_FILE = os.path.join(os.path.dirname(__file__), '../database.sqlite')
 
 cooldowns = {}
 
+class LeaderboardView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+
+    def create_embed(self, period="weekly"):
+        from utils.data_handler import get_data
+        user_data = get_data()
+        prefix = "weekly" if period == "weekly" else "monthly"
+        
+        players = [p for p in user_data.values() if p.get("pubgNickname") and (p.get(f"{prefix}Wins", 0) > 0 or p.get(f"{prefix}Kills", 0) > 0)]
+        players.sort(key=lambda x: (x.get(f"{prefix}Wins", 0), x.get(f"{prefix}Kills", 0)), reverse=True)
+        
+        title = "🔍 Таблиця лідерів"
+        desc_header = "🍗 **Підсумки тижня:**\nХто тут з'їв найбільше курки?\n\n" if period == "weekly" else "🦖 **Підсумки місяця:**\nОсь список пасажирів-чемпіонів:\n\n"
+        color = 0xFFA500 if period == "weekly" else 0x3498DB
+        
+        embed = discord.Embed(title=title, description=desc_header, color=color)
+        
+        if not players:
+            embed.description += "*Дані відсутні для цього періоду.*"
+            return embed
+            
+        table = "```\n#  Гравець          🏆  💀\n"
+        table += "----------------------------\n"
+        for i, p in enumerate(players[:15]):
+            medal = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else f"{i+1}."
+            nick = p['pubgNickname'][:14].ljust(14)
+            wins = str(p.get(f"{prefix}Wins", 0)).rjust(2)
+            kills = str(p.get(f"{prefix}Kills", 0)).rjust(3)
+            table += f"{medal.ljust(2)} {nick} {wins} {kills}\n"
+        table += "```"
+        
+        embed.description += table
+        footer_text = "Оновлюється автоматично. Обирайте період кнопками нижче."
+        embed.set_footer(text=footer_text)
+        return embed
+
+    @discord.ui.button(label="Тиждень 🍗", style=discord.ButtonStyle.primary)
+    async def weekly_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(embed=self.create_embed("weekly"), view=self)
+
+    @discord.ui.button(label="Місяць 🦖", style=discord.ButtonStyle.secondary)
+    async def monthly_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(embed=self.create_embed("monthly"), view=self)
+
 class PubgCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -591,6 +636,12 @@ class PubgCog(commands.Cog):
         embed.set_footer(text="Оновлюється після кожного матчу. Скидання першого числа місяця.")
         
         await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="leaderboard", description="Переглянути таблицю лідерів клану")
+    async def leaderboard(self, interaction: discord.Interaction):
+        view = LeaderboardView()
+        embed = view.create_embed("weekly")
+        await interaction.response.send_message(embed=embed, view=view)
 
 async def setup(bot):
     await bot.add_cog(PubgCog(bot))
