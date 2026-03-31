@@ -53,6 +53,14 @@ def init_db():
             date INTEGER
         )
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS playmates (
+            user1_id TEXT,
+            user2_id TEXT,
+            count INTEGER DEFAULT 1,
+            PRIMARY KEY (user1_id, user2_id)
+        )
+    ''')
     
     print("[DataHandler] Loading data from SQLite...")
     cursor.execute("SELECT * FROM users")
@@ -175,6 +183,45 @@ def delete_data_sync(key):
 
 async def delete_data(key):
     await asyncio.to_thread(delete_data_sync, key)
+
+def increment_playmate_relation(u1, u2):
+    """Збільшує лічильник спільних ігор для двох користувачів."""
+    try:
+        ids = sorted([str(u1), str(u2)])
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO playmates (user1_id, user2_id, count)
+            VALUES (?, ?, 1)
+            ON CONFLICT(user1_id, user2_id) DO UPDATE SET count = count + 1
+        ''', (ids[0], ids[1]))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DataHandler] Error incrementing playmate relation: {e}")
+
+def get_frequent_playmates(user_id):
+    """Повертає список ID користувачів, з якими даний юзер грав найчастіше."""
+    try:
+        u_id = str(user_id)
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT user1_id, user2_id, count FROM playmates
+            WHERE user1_id = ? OR user2_id = ?
+            ORDER BY count DESC
+        ''', (u_id, u_id))
+        rows = cursor.fetchall()
+        conn.close()
+        
+        result = []
+        for r in rows:
+            other = r[1] if r[0] == u_id else r[0]
+            result.append(other)
+        return result
+    except Exception as e:
+        print(f"[DataHandler] Error getting frequent playmates: {e}")
+        return []
 
 # Викликаємо ініціалізацію при імпорті модуля
 init_db()

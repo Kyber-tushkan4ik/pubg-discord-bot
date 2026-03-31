@@ -6,7 +6,7 @@ import json
 import re
 import sqlite3
 
-from utils.data_handler import get_data, save_data, get_settings
+from utils.data_handler import get_data, save_data, get_settings, increment_playmate_relation
 from utils.core import handle_success, send_log
 from utils.helpers import create_log, ms_to_readable, get_record_key, find_record
 
@@ -142,7 +142,36 @@ class EventsCog(commands.Cog):
         user_id = str(member.id)
         now = int(time.time() * 1000)
         
-        if not before.channel and after.channel:
+        # Виявлення зміни каналу (вихід або перехід)
+        if before.channel and before.channel != after.channel:
+            joined_at = voice_sessions.get(user_id)
+            if joined_at:
+                duration = now - joined_at
+                # Якщо пробув більше 10 хвилин (600,000 мс)
+                if duration > 600000:
+                    # Шукаємо інших, хто також був у цьому каналі > 10 хв
+                    for other in before.channel.members:
+                        if other.id == member.id or other.bot: continue
+                        other_joined = voice_sessions.get(str(other.id))
+                        if other_joined and (now - other_joined) > 600000:
+                            increment_playmate_relation(member.id, other.id)
+                
+                # Статистика totalTime
+                try:
+                    conn = sqlite3.connect(DB_FILE)
+                    conn.execute("UPDATE voice_stats SET totalTime = totalTime + ? WHERE userId = ?", (duration, user_id))
+                    conn.commit()
+                    conn.close()
+                except: pass
+                
+                if duration > 3600000:
+                    create_log(f"[VOICE] {member.name} spent {(duration/3600000):.1f}h in voice.")
+                
+                if not after.channel:
+                    voice_sessions.pop(user_id, None)
+
+        # Вхід у новий канал
+        if after.channel and before.channel != after.channel:
             voice_sessions[user_id] = now
             try:
                 conn = sqlite3.connect(DB_FILE)
@@ -153,18 +182,6 @@ class EventsCog(commands.Cog):
                 conn.commit()
                 conn.close()
             except: pass
-        elif before.channel and not after.channel:
-            joined_at = voice_sessions.pop(user_id, None)
-            if joined_at:
-                duration = now - joined_at
-                try:
-                    conn = sqlite3.connect(DB_FILE)
-                    conn.execute("UPDATE voice_stats SET totalTime = totalTime + ? WHERE userId = ?", (duration, user_id))
-                    conn.commit()
-                    conn.close()
-                except: pass
-                if duration > 3600000:
-                    create_log(f"[VOICE] {member.name} spent {(duration/3600000):.1f}h in voice.")
 
 async def setup(bot):
     await bot.add_cog(EventsCog(bot))
