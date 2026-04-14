@@ -497,6 +497,43 @@ class AdminCog(commands.Cog):
             else:
                 await interaction.followup.send(msg)
 
+    @app_commands.command(name="setup_reports_channel", description="Створити окремий канал для перемог та звітів (Адмін)")
+    @is_admin()
+    async def setup_reports_channel(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=False)
+        guild = interaction.guild
+        
+        try:
+            # Шукаємо або створюємо категорію
+            category = discord.utils.get(guild.categories, name="📊 Статистика")
+            if not category:
+                category = await guild.create_category("📊 Статистика")
+            
+            # Створюємо канал у цій категорії
+            channel_name = "🏆-звіти-та-перемоги"
+            existing_channel = discord.utils.get(guild.channels, name=channel_name)
+            
+            if existing_channel:
+                channel = existing_channel
+                await interaction.followup.send(f"⚠️ Канал {channel.mention} вже існує. Використовую його для звітів.")
+            else:
+                channel = await guild.create_text_channel(channel_name, category=category)
+                await interaction.followup.send(f"✅ Успішно створено канал {channel.mention} у категорії **📊 Статистика**!")
+                
+            # Зберігаємо ID каналу у налаштування
+            bot_settings = get_settings()
+            bot_settings["reportsChannelId"] = str(channel.id)
+            await save_settings()
+            
+            await channel.send("👋 Привіт! Відтепер усі автоматичні звіти та повідомлення про перемоги публікуватимуться у цьому каналі.")
+            create_log(f"[SETUP] Створено та налаштовано канал звітів: {channel.name} ({channel.id})")
+            
+        except discord.Forbidden:
+            await interaction.followup.send("❌ У бота недостатньо прав для створення каналів.", ephemeral=True)
+        except Exception as e:
+            create_log(f"[ERROR] setup_reports_channel: {e}")
+            await interaction.followup.send(f"❌ Виникла помилка: {e}", ephemeral=True)
+
     @app_commands.command(name="admin_help", description="Текстова довідка по адмін-командах")
     @is_admin()
     async def admin_help(self, interaction: discord.Interaction):

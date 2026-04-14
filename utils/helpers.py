@@ -1,3 +1,4 @@
+import sys
 import os
 import json
 import discord
@@ -24,7 +25,10 @@ def is_admin():
 def create_log(message: str):
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     log_line = f"[{timestamp}] {message}"
-    print(log_line)
+    try:
+        print(log_line)
+    except UnicodeEncodeError:
+        print(log_line.encode('ascii', errors='replace').decode('ascii'))
     try:
         with open(LOG_FILE, 'a', encoding='utf-8') as f:
             f.write(log_line + '\n')

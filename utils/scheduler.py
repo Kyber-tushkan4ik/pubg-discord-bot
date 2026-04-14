@@ -6,7 +6,7 @@ import json
 import time
 from datetime import datetime, timezone
 
-from .data_handler import get_data, save_data, mark_dirty
+from .data_handler import get_data, save_data, mark_dirty, get_settings, save_settings
 from .pubg_api import get_player, get_player_season_stats, get_latest_match_date, get_match, get_players_batch
 from .helpers import create_log, ms_to_readable
 from .achievements import check_achievements
@@ -59,26 +59,25 @@ def init_scheduler(client: discord.Client):
         create_log("[SCHEDULER] Запуск щоденних завдань...")
         await check_inactivity(client)
         
-        from .data_handler import get_settings, save_settings
         settings = get_settings()
         today_str = time.strftime("%Y-%m-%d")
         
-        # Щотижневий звіт (неділя)
-        if time.localtime().tm_wday == 6 and settings.get("lastWeeklyReportDate") != today_str:
-            await send_weekly_report(client)
-            settings["lastWeeklyReportDate"] = today_str
-            await save_settings()
-            
-        # Скидання тижневої статистики (понеділок)
-        if time.localtime().tm_wday == 0 and settings.get("lastWeeklyResetDate") != today_str:
-            user_data = get_data()
-            for p in user_data.values():
-                p["weeklyWins"] = 0
-                p["weeklyKills"] = 0
-            await save_data()
-            settings["lastWeeklyResetDate"] = today_str
-            await save_settings()
-            create_log("[SCHEDULER] Тижневу статистику скинуто.")
+        # Щотижневий звіт та скидання статистики (понеділок)
+        if time.localtime().tm_wday == 0:
+            if settings.get("lastWeeklyReportDate") != today_str:
+                await send_weekly_report(client)
+                settings["lastWeeklyReportDate"] = today_str
+                await save_settings()
+                
+            if settings.get("lastWeeklyResetDate") != today_str:
+                user_data = get_data()
+                for p in user_data.values():
+                    p["weeklyWins"] = 0
+                    p["weeklyKills"] = 0
+                await save_data()
+                settings["lastWeeklyResetDate"] = today_str
+                await save_settings()
+                create_log("[SCHEDULER] Тижневу статистику скинуто.")
 
         # Щомісячний звіт та скидання (1-ше число)
         if time.localtime().tm_mday == 1 and settings.get("lastMonthlyReportDate") != today_str:
@@ -130,7 +129,8 @@ async def send_weekly_report(client):
     players = [p for p in user_data.values() if p.get("pubgNickname") and (p.get("weeklyWins", 0) > 0 or p.get("weeklyKills", 0) > 0)]
     if not players: return
     
-    report_ch_id = CONFIG.get("WEEKLY_REPORT_CHANNEL_ID") or CONFIG.get("LOG_CHANNEL_ID")
+    bot_settings = get_settings()
+    report_ch_id = bot_settings.get("reportsChannelId") or CONFIG.get("WEEKLY_REPORT_CHANNEL_ID") or CONFIG.get("LOG_CHANNEL_ID")
     if not report_ch_id: return
     report_ch = client.get_channel(int(report_ch_id))
     if not report_ch: return
@@ -164,7 +164,8 @@ async def send_monthly_report(client):
     players = [p for p in user_data.values() if p.get("pubgNickname") and (p.get("monthlyWins", 0) > 0 or p.get("monthlyKills", 0) > 0)]
     if not players: return
     
-    report_ch_id = CONFIG.get("WEEKLY_REPORT_CHANNEL_ID") or CONFIG.get("LOG_CHANNEL_ID")
+    bot_settings = get_settings()
+    report_ch_id = bot_settings.get("reportsChannelId") or CONFIG.get("WEEKLY_REPORT_CHANNEL_ID") or CONFIG.get("LOG_CHANNEL_ID")
     report_ch = client.get_channel(int(report_ch_id))
     if not report_ch: return
     
@@ -311,7 +312,8 @@ async def check_recent_matches(client: discord.Client):
     
     create_log(f"[SCHEDULER] Перевірка матчів {'(ТИХИЙ РЕЖИМ)' if is_quiet else ''}...")
     user_data = get_data()
-    win_channel_id = CONFIG.get("WIN_NOTIF_CHANNEL_ID")
+    bot_settings = get_settings()
+    win_channel_id = bot_settings.get("reportsChannelId") or CONFIG.get("WIN_NOTIF_CHANNEL_ID")
     win_channel = client.get_channel(int(win_channel_id)) if win_channel_id else None
     
     players_list = [(k, v) for k, v in user_data.items() if v.get("pubgNickname")]
@@ -372,7 +374,8 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
         if debug_channel: await debug_channel.send(f"🤫 Гравця **{p_nickname}**: Тихе оновлення ({len(new_matches)} матчів).")
         return len(new_matches)
 
-    win_channel_id = CONFIG.get("WIN_NOTIF_CHANNEL_ID")
+    bot_settings = get_settings()
+    win_channel_id = bot_settings.get("reportsChannelId") or CONFIG.get("WIN_NOTIF_CHANNEL_ID")
     win_channel = client.get_channel(int(win_channel_id)) if win_channel_id else None
     
     processed_count = 0
@@ -408,13 +411,39 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                     await debug_channel.send(msg)
 
                 if stats.get("winPlace") == 1:
-                    mention = f"<@{p['userId']}>" if p.get('userId') and not p.get('isExternal') else f"**{p_nickname}**"
-                    if win_channel:
-                        embed = discord.Embed(title='🍗 ПЕРЕМОГА!', description=f'**{p_nickname}** виграв матч!', color=0xFFCC00)
-                        embed.add_field(name='💀 Вбивств', value=str(stats.get('kills', 0)), inline=True)
-                        embed.add_field(name='🎯 Шкода', value=str(round(stats.get('damageDealt', 0))), inline=True)
-                        await win_channel.send(content=f"🎉 Вітаємо {mention}!", embed=embed)
-                    create_log(f"[WIN] {p_nickname} переміг!")
+                    bot_settings = get_settings()
+                    reported = bot_settings.get("reportedMatches", [])
+                    
+                    if mid not in reported:
+                        reported.append(mid)
+                        if len(reported) > 100:
+                            reported = reported[-100:]
+                        bot_settings["reportedMatches"] = reported
+                        await save_settings()
+                        
+                        clan_winners = []
+                        mentions = []
+                        
+                        user_data = get_data()
+                        clan_users_low = {u.get("pubgNickname", "").lower(): u for u in user_data.values() if u.get("pubgNickname")}
+                        
+                        for inc in match.get("included", []):
+                            if inc["type"] == 'participant':
+                                p_stats = inc.get("attributes", {}).get("stats", {})
+                                if p_stats.get("winPlace") == 1:
+                                    n_low = p_stats.get("name", "").lower()
+                                    if n_low in clan_users_low:
+                                        u_data = clan_users_low[n_low]
+                                        m = f"<@{u_data['userId']}>" if u_data.get('userId') and not u_data.get('isExternal') else f"**{p_stats.get('name')}**"
+                                        mentions.append(m)
+                                        clan_winners.append(f"• {m} — 💀 Вбивств: **{p_stats.get('kills', 0)}** | 🎯 Шкода: **{round(p_stats.get('damageDealt', 0))}**")
+                        
+                        if win_channel and clan_winners:
+                            is_squad = len(clan_winners) > 1
+                            title = '🍗 ПЕРЕМОГА СКВАДУ!' if is_squad else '🍗 ПЕРЕМОГА!'
+                            embed = discord.Embed(title=title, description="Наші розносять лобі!\n\n" + "\n".join(clan_winners), color=0xFFCC00)
+                            await win_channel.send(content=f"🎉 Вітаємо {' '.join(mentions)}!", embed=embed)
+                        create_log(f"[WIN] Перемога зафіксована для матчу {mid} ({len(clan_winners)} гравців з клану)!")
                 
                 if p.get("userId"):
                     await check_achievements(client, p["userId"], p_nickname, stats, win_channel_id)
