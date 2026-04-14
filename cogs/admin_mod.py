@@ -497,39 +497,47 @@ class AdminCog(commands.Cog):
             else:
                 await interaction.followup.send(msg)
 
-    @app_commands.command(name="setup_reports_channel", description="Створити окремий канал для перемог та звітів (Адмін)")
+    @app_commands.command(name="setup_reports_channel", description="Встановити канал для звітів (Адмін)")
+    @app_commands.describe(target_channel="Канал для звітів (опціонально, за замовчуванням власне створення)")
     @is_admin()
-    async def setup_reports_channel(self, interaction: discord.Interaction):
+    async def setup_reports_channel(self, interaction: discord.Interaction, target_channel: discord.TextChannel = None):
         await interaction.response.defer(ephemeral=False)
         guild = interaction.guild
         
         try:
-            # Шукаємо або створюємо категорію
-            category = discord.utils.get(guild.categories, name="📊 Статистика")
-            if not category:
-                category = await guild.create_category("📊 Статистика")
-            
-            # Створюємо канал у цій категорії
-            channel_name = "🏆-звіти-та-перемоги"
-            existing_channel = discord.utils.get(guild.channels, name=channel_name)
-            
-            if existing_channel:
-                channel = existing_channel
-                await interaction.followup.send(f"⚠️ Канал {channel.mention} вже існує. Використовую його для звітів.")
+            if target_channel:
+                channel = target_channel
+                await interaction.followup.send(f"✅ Канал {channel.mention} успішно встановлено як канал для звітів та перемог.")
             else:
-                channel = await guild.create_text_channel(channel_name, category=category)
-                await interaction.followup.send(f"✅ Успішно створено канал {channel.mention} у категорії **📊 Статистика**!")
+                # Шукаємо або створюємо категорію
+                category = discord.utils.get(guild.categories, name="📊 Статистика")
+                if not category:
+                    category = await guild.create_category("📊 Статистика")
+                
+                # Створюємо канал у цій категорії
+                channel_name = "🏆-звіти-та-перемоги"
+                existing_channel = discord.utils.get(guild.channels, name=channel_name)
+                
+                if existing_channel:
+                    channel = existing_channel
+                    await interaction.followup.send(f"⚠️ Канал {channel.mention} вже існує. Використовую його для звітів.")
+                else:
+                    channel = await guild.create_text_channel(channel_name, category=category)
+                    await interaction.followup.send(f"✅ Успішно створено канал {channel.mention} у категорії **📊 Статистика**!")
                 
             # Зберігаємо ID каналу у налаштування
             bot_settings = get_settings()
             bot_settings["reportsChannelId"] = str(channel.id)
             await save_settings()
             
-            await channel.send("👋 Привіт! Відтепер усі автоматичні звіти та повідомлення про перемоги публікуватимуться у цьому каналі.")
+            try:
+                await channel.send("👋 Привіт! Відтепер усі автоматичні звіти та повідомлення про перемоги публікуватимуться у цьому каналі.")
+            except discord.Forbidden:
+                await interaction.followup.send(f"⚠️ Бот не має прав писати в канал {channel.mention}. Надайте йому відповідні права!")
             create_log(f"[SETUP] Створено та налаштовано канал звітів: {channel.name} ({channel.id})")
             
         except discord.Forbidden:
-            await interaction.followup.send("❌ У бота недостатньо прав для створення каналів.", ephemeral=True)
+            await interaction.followup.send("❌ У бота недостатньо прав для управління каналами.", ephemeral=True)
         except Exception as e:
             create_log(f"[ERROR] setup_reports_channel: {e}")
             await interaction.followup.send(f"❌ Виникла помилка: {e}", ephemeral=True)

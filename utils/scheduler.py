@@ -133,7 +133,9 @@ async def send_weekly_report(client):
     report_ch_id = bot_settings.get("reportsChannelId") or CONFIG.get("WEEKLY_REPORT_CHANNEL_ID") or CONFIG.get("LOG_CHANNEL_ID")
     if not report_ch_id: return
     report_ch = client.get_channel(int(report_ch_id))
-    if not report_ch: return
+    if not report_ch:
+        try: report_ch = await client.fetch_channel(int(report_ch_id))
+        except: return
     
     # Сортування: Перемоги, потім вбивства
     players.sort(key=lambda p: (p.get("weeklyWins", 0), p.get("weeklyKills", 0)), reverse=True)
@@ -167,7 +169,9 @@ async def send_monthly_report(client):
     bot_settings = get_settings()
     report_ch_id = bot_settings.get("reportsChannelId") or CONFIG.get("WEEKLY_REPORT_CHANNEL_ID") or CONFIG.get("LOG_CHANNEL_ID")
     report_ch = client.get_channel(int(report_ch_id))
-    if not report_ch: return
+    if not report_ch:
+        try: report_ch = await client.fetch_channel(int(report_ch_id))
+        except: return
     
     players.sort(key=lambda p: (p.get("monthlyWins", 0), p.get("monthlyKills", 0)), reverse=True)
     
@@ -315,6 +319,9 @@ async def check_recent_matches(client: discord.Client):
     bot_settings = get_settings()
     win_channel_id = bot_settings.get("reportsChannelId") or CONFIG.get("WIN_NOTIF_CHANNEL_ID")
     win_channel = client.get_channel(int(win_channel_id)) if win_channel_id else None
+    if not win_channel and win_channel_id:
+        try: win_channel = await client.fetch_channel(int(win_channel_id))
+        except: pass
     
     players_list = [(k, v) for k, v in user_data.items() if v.get("pubgNickname")]
     
@@ -377,6 +384,9 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
     bot_settings = get_settings()
     win_channel_id = bot_settings.get("reportsChannelId") or CONFIG.get("WIN_NOTIF_CHANNEL_ID")
     win_channel = client.get_channel(int(win_channel_id)) if win_channel_id else None
+    if not win_channel and win_channel_id:
+        try: win_channel = await client.fetch_channel(int(win_channel_id))
+        except: pass
     
     processed_count = 0
     for mid in reversed(new_matches[:5]):
