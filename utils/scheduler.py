@@ -250,40 +250,53 @@ async def check_special_roles(bot, guild, member, stats, nickname, debug_channel
     
     for role_name, criteria in special_roles.items():
         passed = False
-        if role_name == 'Санітар':
+        if 'Санітар' in role_name:
             passed = stats.get('revives', 0) >= criteria.get('revives', 15) or stats.get('heals', 0) >= criteria.get('heals', 80)
-        elif role_name == 'Ліквідатор':
+        elif 'Ліквідатор' in role_name:
             ratio = stats.get('headshotKills', 0) / (stats.get('kills', 1) or 1)
             passed = stats.get('kills', 0) >= criteria.get('minKills', 10) and ratio >= criteria.get('headshotRatio', 0.25)
-        elif role_name == 'Берсерк':
+        elif 'Берсерк' in role_name:
             avg_dmg = stats.get('damageDealt', 0) / (stats.get('roundsPlayed', 1) or 1)
             passed = avg_dmg >= criteria.get('avgDamage', 250)
-        elif role_name == 'Бойовий товариш':
+        elif 'Бойовий товариш' in role_name:
             passed = stats.get('assists', 0) >= criteria.get('assists', 5)
-        elif role_name == 'Перевізник':
+        elif 'Перевізник' in role_name:
             passed = stats.get('rideDistance', 0) >= criteria.get('rideDistance', 50000)
-        elif role_name == 'Скажений Макс (Стат)':
+        elif 'Скажений Макс' in role_name:
             passed = stats.get('roadKills', 0) >= criteria.get('roadKills', 5)
-        elif role_name == 'Скаут':
+        elif 'Скаут' in role_name:
             passed = stats.get('walkDistance', 0) >= criteria.get('walkDistance', 25000)
-        elif role_name == 'Вцілілий':
+        elif 'Вцілілий' in role_name:
             ratio = stats.get('top10s', 0) / (stats.get('roundsPlayed', 1) or 1)
             passed = stats.get('roundsPlayed', 0) >= criteria.get('minRounds', 10) and ratio >= criteria.get('top10Ratio', 0.25)
-        elif role_name == 'Затятий гравець':
+        elif 'Затятий гравець' in role_name:
             passed = stats.get('roundsPlayed', 0) >= criteria.get('roundsPlayed', 250)
             
         if passed: earned_roles.append(role_name)
     
+    created_roles = []
+    granted_roles = []
+    
     for role_name in earned_roles:
         role = discord.utils.get(guild.roles, name=role_name)
         if not role:
-            role = await guild.create_role(name=role_name, color=discord.Color.gold())
-            await send_log(bot, f"🆕 Створена нова спеціальна роль: `{role_name}`")
+            color_hex = special_roles.get(role_name, {}).get("color", "0xf1c40f")
+            role_color = discord.Color(int(color_hex, 16))
+            role = await guild.create_role(name=role_name, color=role_color)
+            created_roles.append(role_name)
         if role not in member.roles:
             await member.add_roles(role)
-            await send_log(bot, f"🏆 Гравцю {nickname} видано роль: `{role_name}`")
+            granted_roles.append(role_name)
             create_log(f"[SPECIAL] {nickname} -> {role_name}")
-            if debug_channel: await debug_channel.send(f"🎖️ **Видано спецроль**: {role_name}")
+            
+    if created_roles:
+        created_str = ", ".join([f"`{r}`" for r in created_roles])
+        await send_log(bot, f"🆕 Створені нові спеціальні ролі: {created_str}")
+
+    if granted_roles:
+        granted_str = ", ".join([f"`{r}`" for r in granted_roles])
+        await send_log(bot, f"🏆 Гравцю **{nickname}** видано ролі: {granted_str}")
+        if debug_channel: await debug_channel.send(f"🎖️ **Видано спецролі**: {granted_str}")
             
     # Автоматичне видалення старих (замінених) ролей
     deprecated = {
@@ -554,16 +567,18 @@ async def process_single_player_stats_and_ranks(bot, key, p, pubg_data, debug_ch
         if not member: return
 
         rank_roles = CONFIG.get("RANK_ROLES", {})
-        target_role_name = "Новачок"
-        for role_name, min_kd in sorted(rank_roles.items(), key=lambda x: x[1], reverse=True):
-            if kd >= min_kd:
+        target_role_name = list(rank_roles.keys())[-1] if rank_roles else "🔰 Новачок"
+        target_color = "0x2ecc71"
+        for role_name, data in sorted(rank_roles.items(), key=lambda x: x[1].get('min_kd', 0), reverse=True):
+            if kd >= data.get('min_kd', 0):
                 target_role_name = role_name
+                target_color = data.get('color', "0x2ecc71")
                 break
         
         if not any(r.name == target_role_name for r in member.roles):
             role_obj = discord.utils.get(guild.roles, name=target_role_name)
             if not role_obj:
-                role_obj = await guild.create_role(name=target_role_name)
+                role_obj = await guild.create_role(name=target_role_name, color=discord.Color(int(target_color, 16)))
             
             to_remove = [r for r in member.roles if r.name in rank_roles and r.name != target_role_name]
             if to_remove: await member.remove_roles(*to_remove)

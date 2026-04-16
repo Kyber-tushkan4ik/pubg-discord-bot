@@ -89,6 +89,8 @@ class AdminCog(commands.Cog):
         del record["pubgNickname"]
         await save_data()
 
+        create_log(f"[ACCOUNT] АДМІН {interaction.user} відв'язав PUBG нікнейм {old_nick} у гравця {user.display_name}")
+
         embed = discord.Embed(
             title='✅ Прив\'язку видалено',
             description=f"Користувача **{user.mention}** відв'язано від нікнейму **{old_nick}**.",
@@ -448,16 +450,26 @@ class AdminCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         mapping = {
-            "Медик": "Санітар",
-            "Головоріз": "Ліквідатор",
-            "Термінатор": "Ліквідатор",
-            "Асистент": "Бойовий товариш",
-            "Водій": "Перевізник",
-            "Водій (Стат)": "Перевізник",
-            "Мандрівник": "Скаут",
-            "Виживач": "Вцілілий",
-            "Задрот": "Затятий гравець",
-            "Скажений Макс": "Скажений Макс (Стат)"
+            "Медик": "🏥 Санітар",
+            "Санітар": "🏥 Санітар",
+            "Головоріз": "💀 Ліквідатор",
+            "Термінатор": "💀 Ліквідатор",
+            "Ліквідатор": "💀 Ліквідатор",
+            "Асистент": "🤝 Бойовий товариш",
+            "Бойовий товариш": "🤝 Бойовий товариш",
+            "Водій": "🚗 Перевізник",
+            "Водій (Стат)": "🚗 Перевізник",
+            "Перевізник": "🚗 Перевізник",
+            "Мандрівник": "🔭 Скаут",
+            "Скаут": "🔭 Скаут",
+            "Виживач": "🛡️ Вцілілий",
+            "Вцілілий": "🛡️ Вцілілий",
+            "Задрот": "🕹️ Затятий гравець",
+            "Затятий гравець": "🕹️ Затятий гравець",
+            "Скажений Макс": "🩸 Скажений Макс (Стат)",
+            "Снайпер": "🦅 Снайпер",
+            "Ветеран": "🎖️ Ветеран",
+            "Новачок": "🔰 Новачок"
         }
         
         guild = interaction.guild
@@ -482,9 +494,17 @@ class AdminCog(commands.Cog):
                     await old_role.delete(reason="Міграція статичних ролей")
                     changes.append(f"✅ Об'єднано `{old_name}` ➔ `{new_name}` (перенесено {count} осіб)")
                 else:
-                    # Якщо нової немає, просто перейменовуємо стару
-                    await old_role.edit(name=new_name, reason="Міграція статичних ролей")
-                    changes.append(f"📝 Перейменовано `{old_name}` ➔ `{new_name}`")
+                    # Якщо нової немає, або просто треба оновити колір
+                    color_val = discord.Color.default()
+                    s_roles = CONFIG.get("SPECIAL_ROLES", {})
+                    r_roles = CONFIG.get("RANK_ROLES", {})
+                    if new_name in s_roles and "color" in s_roles[new_name]:
+                        color_val = discord.Color(int(s_roles[new_name]["color"], 16))
+                    elif new_name in r_roles and "color" in r_roles[new_name]:
+                        color_val = discord.Color(int(r_roles[new_name]["color"], 16))
+
+                    await old_role.edit(name=new_name, color=color_val, reason="Міграція статичних ролей")
+                    changes.append(f"📝 Оновлено `{old_name}` ➔ `{new_name}` (встановлено колір)")
             except Exception as e:
                 changes.append(f"❌ Помилка з `{old_name}`: {e}")
                 
@@ -541,6 +561,44 @@ class AdminCog(commands.Cog):
         except Exception as e:
             create_log(f"[ERROR] setup_reports_channel: {e}")
             await interaction.followup.send(f"❌ Виникла помилка: {e}", ephemeral=True)
+
+    @app_commands.command(name="linked_users", description="Показати всіх під'єднаних до бота / API користувачів")
+    @is_admin()
+    async def linked_users(self, interaction: discord.Interaction):
+        user_data = get_data()
+        linked = []
+        ext = []
+        
+        for key, user in user_data.items():
+            if user.get("pubgNickname"):
+                if user.get("isExternal") or (user.get("userId") and str(user.get("userId")).startswith('ext_')):
+                    ext.append(f"• **{user.get('pubgNickname')}** (ID: `{key}`)")
+                else:
+                    userId_str = user.get("userId")
+                    mention = f"<@{userId_str}>" if userId_str else "`Невідомий ID`"
+                    linked.append(f"{mention} ➔ **{user.get('pubgNickname')}**")
+                    
+        embed = discord.Embed(
+            title="🔗 Прив'язані користувачі",
+            color=0x3498db
+        )
+        
+        # Paginate or string slice to avoid >1024 error in embed fields
+        if linked:
+            linked_str = "\n".join(linked)
+            if len(linked_str) > 1024:
+                linked_str = linked_str[:1000] + "\n*(та інші...)*"
+            embed.add_field(name=f"Discord користувачі ({len(linked)})", value=linked_str, inline=False)
+        else:
+            embed.add_field(name="Discord користувачі (0)", value="У базі відсутні прив'язки.", inline=False)
+            
+        if ext:
+            ext_str = "\n".join(ext)
+            if len(ext_str) > 1024:
+                ext_str = ext_str[:1000] + "\n*(та інші...)*"
+            embed.add_field(name=f"Зовнішні гравці ({len(ext)})", value=ext_str, inline=False)
+            
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="admin_help", description="Текстова довідка по адмін-командах")
     @is_admin()

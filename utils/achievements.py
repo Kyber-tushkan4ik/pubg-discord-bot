@@ -44,7 +44,7 @@ ACHIEVEMENTS = [
     {
         "id": 'terminator',
         "name": '🤖 Термінатор',
-        "description": 'Нанести більше 1000 урону за матч.',
+        "description": 'Завдати більше 1000 шкоди за матч.',
         "condition": lambda stats: stats.get('damageDealt', 0) >= 1000,
         "secret": False
     },

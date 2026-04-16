@@ -61,6 +61,47 @@ def init_db():
             PRIMARY KEY (user1_id, user2_id)
         )
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS weapons (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            damage REAL,
+            velocity REAL,
+            fireRate REAL,
+            reloadTime REAL,
+            btk INTEGER DEFAULT 4
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS news_feed (
+            id TEXT PRIMARY KEY,
+            title TEXT,
+            url TEXT,
+            date INTEGER,
+            type TEXT
+        )
+    ''')
+    
+    # Ініціалізація базової статистики зброї (за офіційними даними наближено для 2-го рівня броні)
+    cursor.execute("SELECT count(*) FROM weapons")
+    if cursor.fetchone()[0] == 0:
+        base_weapons = [
+            ("m416", "M416", 40.0, 880.0, 0.086, 2.1, 5),
+            ("beryl", "Beryl M762", 44.0, 715.0, 0.086, 2.9, 4),
+            ("akm", "AKM", 47.0, 715.0, 0.100, 2.9, 4),
+            ("aug", "AUG", 41.0, 940.0, 0.086, 3.0, 5),
+            ("kar98k", "Kar98k", 79.0, 760.0, 1.900, 4.0, 2),
+            ("m24", "M24", 75.0, 790.0, 1.800, 4.2, 2),
+            ("mini14", "Mini 14", 48.0, 990.0, 0.100, 3.6, 3),
+            ("slr", "SLR", 56.0, 840.0, 0.100, 3.68, 3),
+            ("sks", "SKS", 53.0, 800.0, 0.090, 2.9, 3)
+        ]
+        cursor.executemany('''
+            INSERT INTO weapons (id, name, damage, velocity, fireRate, reloadTime, btk)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', base_weapons)
+        print("[DataHandler] Initialized base weapons data.")
+    
     
     print("[DataHandler] Loading data from SQLite...")
     cursor.execute("SELECT * FROM users")

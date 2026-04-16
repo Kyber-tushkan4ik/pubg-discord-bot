@@ -235,7 +235,7 @@ class PubgCog(commands.Cog):
         embed.description = desc or "Гравців не знайдено"
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="compare", description="Порівняти статистику з іншим гравцем (VS Mode)")
+    @app_commands.command(name="compare_players", description="Порівняти статистику з іншим гравцем (VS Mode)")
     @app_commands.describe(target="Гравець для порівняння", mode="Режим гри (Squad/Duo/Solo)")
     @app_commands.choices(mode=[
         app_commands.Choice(name='Squad FPP', value='squad-fpp'),
@@ -245,7 +245,7 @@ class PubgCog(commands.Cog):
         app_commands.Choice(name='Solo FPP', value='solo-fpp'),
         app_commands.Choice(name='Solo TPP', value='solo')
     ])
-    async def compare(self, interaction: discord.Interaction, target: discord.User, mode: app_commands.Choice[str] = None):
+    async def compare_players(self, interaction: discord.Interaction, target: discord.User, mode: app_commands.Choice[str] = None):
         mode_value = mode.value if mode else 'squad-fpp'
         user_data = get_data()
         
@@ -458,47 +458,6 @@ class PubgCog(commands.Cog):
             print(f"Помилка отримання рекордів: {e}")
             await interaction.followup.send("❌ Помилка отримання рекордів.")
 
-    @app_commands.command(name="drop", description="Вибрати випадкову локацію для висадки")
-    @app_commands.describe(map_name="Мапа")
-    @app_commands.choices(map_name=[
-        app_commands.Choice(name='Erangel', value='erangel'),
-        app_commands.Choice(name='Miramar', value='miramar'),
-        app_commands.Choice(name='Taego', value='taego'),
-        app_commands.Choice(name='Vikendi', value='vikendi'),
-        app_commands.Choice(name='Deston', value='deston'),
-        app_commands.Choice(name='Rondo', value='rondo'),
-        app_commands.Choice(name='Sanhok', value='sanhok'),
-        app_commands.Choice(name='Karakin', value='karakin'),
-        app_commands.Choice(name='Paramo', value='paramo')
-    ])
-    async def drop(self, interaction: discord.Interaction, map_name: app_commands.Choice[str]):
-        locations = {
-            "erangel": ["Pochinki", "School", "Military Base", "Rozhok", "Yasnaya Polyana", "Georgopol", "Novorepnoye", "Gatka", "Mylta", "Farm", "Quarry", "Shelter", "Prison", "Lipovka", "Severny", "Zharki", "Stalber", "Kameshki", "Ruins", "Hospital"],
-            "miramar": ["Pecado", "Hacienda del Patron", "San Martin", "Los Leones", "El Pozo", "Chumacera", "Power Grid", "Monte Nuevo", "Valle del Mar", "Impala", "Puerto Paraiso", "Cruz del Valle", "El Azahar", "Torre Ahumada", "Campo Militar", "La Cobreria", "Minas Generales", "Junkyard"],
-            "taego": ["Terminal", "Shipyard", "Ho San", "Palace", "Buk San Sa", "Kang Neung", "Hae Moo Sa", "Go Dok", "Yong Cheon", "School", "Hospital", "Airport"],
-            "vikendi": ["Castle", "Cosmodrome", "Dino Park", "Villa", "Cement Factory", "Goroka", "Dobro Mesto", "Volnova", "Podvosto", "Peshkova", "Trevno", "Krichas", "Coal Mine", "Mount Kreznic", "Winery", "Port", "Sawmill"],
-            "deston": ["Ripton", "Los Arcos", "Concert District", "Hydroelectric Dam", "Buxley", "Construction Site", "Turrita", "Barclift", "Lodging", "Arena", "Swamp", "Assembly"],
-            "sanhok": ["Bootcamp", "Paradise Resort", "Ruins", "Pai Nan", "Camp Alpha", "Camp Bravo", "Camp Charlie", "Ha Tinh", "Tat Mok", "Khao", "Mongnai", "Ban Tai", "Docks", "Quarry", "Sahmee", "Tambang"],
-            "karakin": ["Bashara", "Bahr Sahir", "Al Habar", "Hadiqa Nemo", "Cargo Ship"],
-            "paramo": ["Atlatl Ridge", "Makalpa", "Capaco", "Hell's Crash"],
-            "rondo": ["Jadena City", "Stadium", "NEOX Factory", "Test Track", "Rin Jiang", "Tin Long Garden", "Yu Lin", "Mey Ran", "Bei Li", "Hung Shan"]
-        }
-        
-        map_key = map_name.value
-        map_display = map_name.name
-        locs = locations.get(map_key, ["Unknown"])
-        target_loc = random.choice(locs)
-        
-        embed = discord.Embed(
-            title=f"📍 Random Drop: {map_display}",
-            description=f"Ваша ціль: **{target_loc}**",
-            color=0x3498db
-        )
-        embed.set_thumbnail(url='https://i.imgur.com/2s42c0z.png')
-        embed.set_footer(text='Стрибаємо на рахунок три!')
-        
-        await interaction.response.send_message(embed=embed)
-
     @app_commands.command(name="strat", description="Отримати випадковий челендж для матчу (Strat Roulette)")
     @app_commands.describe(difficulty="Складність")
     @app_commands.choices(difficulty=[
@@ -637,8 +596,8 @@ class PubgCog(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="leaderboard", description="Переглянути таблицю лідерів клану")
-    async def leaderboard(self, interaction: discord.Interaction):
+    @app_commands.command(name="clan_leaderboard", description="Переглянути таблицю лідерів клану")
+    async def clan_leaderboard(self, interaction: discord.Interaction):
         view = LeaderboardView()
         embed = view.create_embed("weekly")
         await interaction.response.send_message(embed=embed, view=view)

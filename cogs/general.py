@@ -137,6 +137,8 @@ class GeneralCog(commands.Cog):
         del record["pubgNickname"]
         await save_data()
         
+        create_log(f"[ACCOUNT] {interaction.user} (ID: {user_id}) самостійно відв'язав PUBG нікнейм: {old_nick}")
+        
         embed = discord.Embed(
             title='✅ Прив\'язку видалено',
             description=f"Ваш профіль успішно відв'язано від нікнейму **{old_nick}**.",
