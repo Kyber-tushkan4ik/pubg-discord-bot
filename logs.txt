@@ -242,3 +242,4 @@
 [2026-04-17 00:23:50] [NICKNAME] Success: yamedo_kh -> X_TeTme
 [2026-04-17 00:24:14] [ACCOUNT] АДМІН goodnight_231 відв'язав PUBG нікнейм Faiton1 у гравця stertyger
 [2026-04-17 00:25:37] [NICKNAME] Success: stalker5486 -> ACAB3
+[2026-04-17 00:35:26] [SCHEDULER] Перевірка матчів ...

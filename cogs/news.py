@@ -9,7 +9,7 @@ class NewsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.channel_id = 1297667294738124840
-        self.news_url = "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=578080&count=5&maxlength=300"
+        self.news_url = "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=578080&count=8&maxlength=300&feeds=steam_community_announcements"
         self.pubg_monitor.start()
 
     def cog_unload(self):
@@ -52,10 +52,15 @@ class NewsCog(commands.Cog):
                         for item in reversed(news_items):
                             news_id = item.get("gid")
                             if not self.is_news_saved(news_id):
-                                title = item.get("title")
+                                title = item.get("title", "")
                                 url = item.get("url")
                                 contents = item.get("contents", "")
                                 date = item.get("date")
+                                
+                                # Ігноруємо щотижневі звіти про бани та інші спам-пости
+                                if "bans notice" in title.lower() or "weekly ban" in title.lower():
+                                    self.save_news(news_id, title, url, date, item.get("feedname"))
+                                    continue
                                 
                                 # Зберігаємо в базі
                                 self.save_news(news_id, title, url, date, item.get("feedname"))
@@ -83,11 +88,15 @@ class NewsCog(commands.Cog):
                     if response.status == 200:
                         data = await response.json()
                         items = data.get("appnews", {}).get("newsitems", [])
-                        if not items:
-                            await interaction.followup.send("❌ Немає новин або Steam API недоступний.")
+                        
+                        # Відфільтруємо бани для ручної команди теж
+                        valid_items = [i for i in items if "bans notice" not in i.get("title", "").lower() and "weekly ban" not in i.get("title", "").lower()]
+                        
+                        if not valid_items:
+                            await interaction.followup.send("❌ Немає актуальних новин або Steam API недоступний.")
                             return
                             
-                        item = items[0]
+                        item = valid_items[0]
                         title = item.get("title")
                         url = item.get("url")
                         contents = item.get("contents", "")
