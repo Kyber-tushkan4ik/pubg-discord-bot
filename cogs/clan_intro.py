@@ -7,7 +7,7 @@ import random
 import time
 import asyncio
 
-from utils.data_handler import get_data, save_data
+from utils.data_handler import get_data, save_data, mark_dirty
 from utils.core import handle_success, send_log
 from utils.helpers import is_admin
 
@@ -88,6 +88,7 @@ class ClanIntroCog(commands.Cog):
                                 user_data[key] = {"username": str(member), "userId": user_id, "guildId": guild_id}
                                 record = user_data[key]
                             record["intro_started"] = True
+                            mark_dirty(key)
                             await save_data()
                             await asyncio.sleep(2) # Затримка проти спаму
                             

@@ -2,7 +2,7 @@ import discord
 import time
 import json
 import os
-from .data_handler import get_data, save_data, get_settings
+from .data_handler import get_data, save_data, get_settings, mark_dirty
 from .helpers import create_log, ms_to_readable, get_record_key
 
 # Завантаження конфігу
@@ -31,6 +31,18 @@ async def handle_success(member: discord.Member):
             await member.remove_roles(role_adapt)
         if role_success:
             await member.add_roles(role_success)
+            
+        # Записуємо в БД, що адаптація повністю пройдена
+        user_data = get_data()
+        key = get_record_key(str(member.id), str(guild.id))
+        record = user_data.get(key)
+        if not record:
+            user_data[key] = {"username": str(member), "userId": str(member.id), "guildId": str(guild.id)}
+            record = user_data[key]
+        record["intro_done"] = True
+        record["intro_started"] = True
+        mark_dirty(key)
+        await save_data()
 
         embed = discord.Embed(
             title='🎉 Ознайомлення завершено!',
