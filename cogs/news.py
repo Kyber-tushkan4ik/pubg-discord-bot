@@ -53,7 +53,9 @@ class NewsCog(commands.Cog):
                             news_id = item.get("gid")
                             if not self.is_news_saved(news_id):
                                 title = item.get("title", "")
-                                url = item.get("url")
+                                url = item.get("url", "").strip()
+                                if not url.startswith("http"):
+                                    url = "https://store.steampowered.com/news/app/578080/"
                                 contents = item.get("contents", "")
                                 date = item.get("date")
                                 
@@ -97,8 +99,10 @@ class NewsCog(commands.Cog):
                             return
                             
                         item = valid_items[0]
-                        title = item.get("title")
-                        url = item.get("url")
+                        title = item.get("title", "")
+                        url = item.get("url", "").strip()
+                        if not url.startswith("http"):
+                            url = "https://store.steampowered.com/news/app/578080/"
                         contents = item.get("contents", "")
                         
                         embed = discord.Embed(
