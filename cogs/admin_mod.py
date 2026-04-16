@@ -9,6 +9,7 @@ from utils.pubg_api import get_player
 from utils.helpers import get_record_key, find_record, create_log, is_admin
 from utils.moderation import add_warning, clear_warnings
 from utils.scheduler import check_recent_matches, update_stats_and_ranks, send_weekly_report, check_inactivity, process_single_player_matches, process_single_player_stats_and_ranks
+from utils.core import handle_success
 import time
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../config.json')
@@ -71,6 +72,17 @@ class AdminCog(commands.Cog):
                 
         except Exception as e:
             await interaction.followup.send("Сталася помилка. Перевірте API ключ.", ephemeral=True)
+
+    @app_commands.command(name="adapt_finish", description="Завершити адаптацію для користувача вручну (Адмін)")
+    @app_commands.describe(member="Користувач, якому завершити адаптацію")
+    @is_admin()
+    async def adapt_finish(self, interaction: discord.Interaction, member: discord.Member):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await handle_success(member)
+            await interaction.followup.send(f"✅ Адаптацію успішно завершено для {member.mention}.")
+        except Exception as e:
+            await interaction.followup.send(f"❌ Сталася помилка: {e}")
 
 
 
