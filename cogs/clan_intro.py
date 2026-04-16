@@ -17,9 +17,9 @@ with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
 
 
 ROLES = {
-    "🎯 Снайпер": "Любитель дальніх пострілів та точності.",
-    "🔥 Берсерк": "Завжди на передовій, перший входить у будівлі.",
-    "🚑 Санітар": "Рятує команду у найскладніших ситуаціях.",
+    "🦅 Снайпер": "Любитель дальніх пострілів та точності.",
+    "👹 Берсерк": "Завжди на передовій, перший входить у будівлі.",
+    "🏥 Санітар": "Рятує команду у найскладніших ситуаціях.",
     "🚗 Перевізник": "Король доріг, знає кожен поворот на Ерангелі."
 }
 
@@ -298,19 +298,16 @@ class RoleView(discord.ui.View):
             guild = interaction.guild
             member = interaction.user
             
-            # Очищуємо саму назву ролі від емодзі для пошуку/створення
-            clean_name = role_name.split(" ", 1)[-1] if " " in role_name else role_name
-            
             await interaction.response.defer(ephemeral=True)
             
             try:
-                # Шукаємо існуючу роль
-                target_role = discord.utils.get(guild.roles, name=clean_name)
+                # Шукаємо існуючу роль, враховуючи емодзі у назві
+                target_role = discord.utils.get(guild.roles, name=role_name)
                 
                 if not target_role:
                     # Створюємо роль, якщо її немає
-                    target_role = await guild.create_role(name=clean_name, color=discord.Color.blue(), mentionable=True)
-                    await send_log(self.cog.bot, f"🆕 Створено нову ігрову роль: `{clean_name}`")
+                    target_role = await guild.create_role(name=role_name, color=discord.Color.blue(), mentionable=True)
+                    await send_log(self.cog.bot, f"🆕 Створено нову ігрову роль: `{role_name}`")
                 
                 # Видаємо роль
                 await member.add_roles(target_role)
