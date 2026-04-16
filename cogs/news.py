@@ -42,6 +42,15 @@ class NewsCog(commands.Cog):
             return  # Канал не знайдено, або бот не має доступу
             
         try:
+            # Спочатку перевіримо останні повідомлення в каналі, щоб не дублювати
+            history_titles = set()
+            try:
+                async for msg in channel.history(limit=20):
+                    if msg.author == self.bot.user and msg.embeds:
+                        history_titles.add(msg.embeds[0].title)
+            except Exception as e:
+                print(f"[NewsMonitor] Не вдалося зчитати історію чату: {e}")
+
             async with aiohttp.ClientSession() as session:
                 async with session.get(self.news_url) as response:
                     if response.status == 200:
@@ -58,6 +67,11 @@ class NewsCog(commands.Cog):
                                     url = "https://store.steampowered.com/news/app/578080/"
                                 contents = item.get("contents", "")
                                 date = item.get("date")
+                                
+                                # Перевіряємо історію каналу, щоб уникнути дубляжів при збої бази даних
+                                if title in history_titles:
+                                    self.save_news(news_id, title, url, date, item.get("feedname"))
+                                    continue
                                 
                                 # Ігноруємо щотижневі звіти про бани та інші спам-пости
                                 if "bans notice" in title.lower() or "weekly ban" in title.lower():
