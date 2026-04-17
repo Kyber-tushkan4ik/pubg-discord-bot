@@ -654,10 +654,14 @@ class AdminCog(commands.Cog):
         embed = view.get_main_embed(interaction.guild)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @app_commands.command(name="db_backup", description="Створити резервну копію бази даних (Адмін)")
-    @is_admin()
+    @app_commands.command(name="db_backup", description="Створити резервну копію бази даних (Тільки для власника)")
     async def db_backup(self, interaction: discord.Interaction):
-        """Створює копію бази даних та надсилає її в DM користувачеві."""
+        """Створює копію бази даних та надсилає її в DM користувачеві. Обмежено по ID 776154533742641174."""
+        # Перевірка специфічного ID користувача
+        if str(interaction.user.id) != "776154533742641174":
+            await interaction.response.send_message("❌ У вас немає прав для використання цієї команди.", ephemeral=True)
+            return
+
         await interaction.response.defer(ephemeral=True)
         
         db_path = os.path.join(os.path.dirname(__file__), '../database.sqlite')
