@@ -12,6 +12,7 @@ from utils.scheduler import check_recent_matches, update_stats_and_ranks, send_w
 from utils.core import handle_success
 import time
 import asyncio
+import shutil
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../config.json')
 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
@@ -652,6 +653,71 @@ class AdminCog(commands.Cog):
         view = AdminMenuView(self.bot, interaction.user)
         embed = view.get_main_embed(interaction.guild)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @app_commands.command(name="db_backup", description="Створити резервну копію бази даних (Адмін)")
+    @is_admin()
+    async def db_backup(self, interaction: discord.Interaction):
+        """Створює копію бази даних та надсилає її в DM користувачеві."""
+        await interaction.response.defer(ephemeral=True)
+        
+        db_path = os.path.join(os.path.dirname(__file__), '../database.sqlite')
+        if not os.path.exists(db_path):
+            await interaction.followup.send("❌ Файл бази даних не знайдено.")
+            return
+
+        try:
+            # Створюємо тимчасову копію
+            backup_file = f"database_backup_{int(time.time())}.sqlite"
+            shutil.copy2(db_path, backup_file)
+            
+            # Відправляємо в особисті повідомлення
+            try:
+                file = discord.File(backup_file, filename="database.sqlite")
+                await interaction.user.send(
+                    content=f"📦 **Резервна копія бази даних** від {interaction.guild.name}\nДата: {time.strftime('%Y-%m-%d %H:%M:%S')}",
+                    file=file
+                )
+                await interaction.followup.send("✅ Резервну копію надіслано вам в особисті повідомлення (DM).")
+            except discord.Forbidden:
+                await interaction.followup.send("❌ Не вдалося надіслати повідомлення. Перевірте, чи відкриті у вас особисті повідомлення.")
+            
+            # Видаляємо тимчасовий файл
+            if os.path.exists(backup_file):
+                os.remove(backup_file)
+                
+        except Exception as e:
+            await interaction.followup.send(f"❌ Помилка при створенні бекапу: {e}")
+
+    @app_commands.command(name="db_restore", description="Відновити базу даних з файлу (Тільки для власника)")
+    @app_commands.describe(file="Файл бази даних .sqlite")
+    async def db_restore(self, interaction: discord.Interaction, file: discord.Attachment):
+        """Відновлює базу даних з прикріпленого файлу .sqlite. Обмежено по ID 776154533742641174."""
+        # Перевірка специфічного ID користувача
+        if str(interaction.user.id) != "776154533742641174":
+            await interaction.response.send_message("❌ У вас немає прав для використання цієї критичної команди.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        if not file.filename.endswith(".sqlite"):
+            await interaction.followup.send("❌ Будь ласка, завантажте валідний файл `.sqlite`.")
+            return
+
+        try:
+            db_path = os.path.join(os.path.dirname(__file__), '../database.sqlite')
+            
+            # Створюємо бекап поточної бази перед заміною (на всяк випадок)
+            if os.path.exists(db_path):
+                shutil.copy2(db_path, db_path + ".bak")
+
+            # Завантажуємо та зберігаємо новий файл
+            await file.save(db_path)
+            
+            await interaction.followup.send("✅ Базу даних успішно відновлено! Система почне використовувати нові дані при наступному зверненні.")
+            create_log(f"[SYSTEM] Базу даних відновлено користувачем {interaction.user}")
+            
+        except Exception as e:
+            await interaction.followup.send(f"❌ Помилка при відновленні бази: {e}")
 
 # --- Interactive View Components ---
 
