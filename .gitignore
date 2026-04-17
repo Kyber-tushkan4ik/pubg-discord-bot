@@ -9,3 +9,9 @@ settings.json
 brain/
 venv/
 .vscode/
+logs.txt
+mod_logs.json
+*.png
+check_player_debug.py
+debug_user.py
+scratch/

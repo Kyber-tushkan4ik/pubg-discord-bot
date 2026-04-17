@@ -11,6 +11,7 @@ from utils.moderation import add_warning, clear_warnings
 from utils.scheduler import check_recent_matches, update_stats_and_ranks, send_weekly_report, check_inactivity, process_single_player_matches, process_single_player_stats_and_ranks
 from utils.core import handle_success
 import time
+import asyncio
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../config.json')
 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
@@ -253,7 +254,6 @@ class AdminCog(commands.Cog):
                 fail_count += 1
                 failed_usernames.append(u['nickname'])
                 create_log(f"Failed to DM {u['nickname']}: {e}")
-            import asyncio
             await asyncio.sleep(1)
 
         report_embed = discord.Embed(
@@ -712,6 +712,11 @@ class AdminMenuView(discord.ui.View):
         if self.bot.user.avatar: embed.set_thumbnail(url=self.bot.user.avatar.url)
         embed.add_field(name="📊 База", value=f"👥 Гравців: `{len(linked)}`\n🌐 Зовнішніх: `{len(ext)}`", inline=True)
         embed.add_field(name="🛰️ Система", value=f"⚡ Ping: `{round(self.bot.latency * 1000)}ms`\n🏠 Сервер: `{guild.name}`", inline=True)
+        if self.selected_user:
+            embed.add_field(name="🎯 Обраний гравець", value=f"{self.selected_user.mention} (`{self.selected_user.id}`)", inline=False)
+        else:
+            embed.add_field(name="🎯 Обраний гравець", value="`Не вибрано` (оберіть у меню нижче)", inline=False)
+
         embed.set_footer(text=f"Запит від {self.user.display_name} • Активне 2 хв", icon_url=self.user.display_avatar.url)
         return embed
 
@@ -728,25 +733,30 @@ class AdminMenuView(discord.ui.View):
             self.add_item(AdminButton("Топ активних", discord.ButtonStyle.primary, "top_active", emoji="🏆"))
             self.add_item(AdminButton("Перевірка неактивних", discord.ButtonStyle.secondary, "warn_inactive", emoji="📨"))
         elif self.current_category == "players":
-            embed = discord.Embed(title="👥 Менеджмент гравців", description="Спочатку оберіть користувача, потім дію.", color=0x2ecc71)
+            embed = discord.Embed(title="👥 Менеджмент гравців", description="**Інструкція:**\n1. Оберіть гравця\n2. Натисніть кнопку дії", color=0x2ecc71)
             self.add_item(AdminUserSelect())
             self.add_item(AdminButton("Прив'язати", discord.ButtonStyle.success, "btn_link", row=2))
             self.add_item(AdminButton("Відв'язати", discord.ButtonStyle.danger, "btn_unlink", row=2))
             self.add_item(AdminButton("Додати зовнішнього", discord.ButtonStyle.secondary, "btn_add_ext", row=3))
         elif self.current_category == "mod":
-            embed = discord.Embed(title="🛡️ Модерація", description="Оберіть користувача для видачі варну.", color=0xe74c3c)
+            embed = discord.Embed(title="🛡️ Модерація", description="**Інструкція:**\n1. Оберіть гравця\n2. Видайте або очистіть варни", color=0xe74c3c)
             self.add_item(AdminUserSelect())
             self.add_item(AdminButton("Видати Warn", discord.ButtonStyle.danger, "btn_warn"))
             self.add_item(AdminButton("Очистити Warns", discord.ButtonStyle.secondary, "btn_clear_warns"))
         elif self.current_category == "intro":
-            embed = discord.Embed(title="👋 Ознайомлення", description="Налаштування вітальної панелі.", color=0x9b59b6)
-            self.add_item(AdminButton("Встановити панель", discord.ButtonStyle.success, "btn_intro_setup"))
-            self.add_item(AdminButton("Надіслати DM", discord.ButtonStyle.primary, "btn_send_intro"))
+            embed = discord.Embed(title="👋 Ознайомлення", description="**Інструкція:**\n1. Для надсилання DM **оберіть гравця**\n2. Натисніть кнопку дії", color=0x9b59b6)
+            self.add_item(AdminUserSelect())
+            self.add_item(AdminButton("Встановити панель", discord.ButtonStyle.success, "btn_intro_setup", row=2))
+            self.add_item(AdminButton("Надіслати DM", discord.ButtonStyle.primary, "btn_send_intro", row=2))
         elif self.current_category == "system":
-            embed = discord.Embed(title="⚙️ Система та Дебаг", description="Технічне обслуговування бота.", color=0x95a5a6)
-            self.add_item(AdminButton("Дебаг гравця", discord.ButtonStyle.primary, "btn_debug_player"))
-            self.add_item(AdminButton("Міграція ролей", discord.ButtonStyle.danger, "btn_cleanup"))
-            self.add_item(AdminButton("Ручний запуск", discord.ButtonStyle.secondary, "btn_debug_run"))
+            embed = discord.Embed(title="⚙️ Система та Дебаг", description="**Інструкція:**\n1. Для дебагу **оберіть гравця**\n2. Натисніть кнопку", color=0x95a5a6)
+            self.add_item(AdminUserSelect())
+            self.add_item(AdminButton("Дебаг гравця", discord.ButtonStyle.primary, "btn_debug_player", row=2))
+            self.add_item(AdminButton("Міграція ролей", discord.ButtonStyle.danger, "btn_cleanup", row=2))
+            self.add_item(AdminButton("Ручний запуск", discord.ButtonStyle.secondary, "btn_debug_run", row=3))
+
+        if self.selected_user:
+            embed.add_field(name="🎯 Вибрано", value=f"{self.selected_user.mention}", inline=False)
 
         if not embed:
             embed = discord.Embed(title="⚠️ Помилка", description="Не вдалося завантажити вміст категорії.", color=0xFF0000)

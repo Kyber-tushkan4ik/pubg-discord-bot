@@ -9,7 +9,7 @@ import asyncio
 
 from utils.data_handler import get_data, save_data, mark_dirty
 from utils.core import handle_success, send_log
-from utils.helpers import is_admin
+from utils.helpers import is_admin, get_record_key
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../config.json')
 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
@@ -78,7 +78,7 @@ class ClanIntroCog(commands.Cog):
                         if member.bot: continue
                         user_id = str(member.id)
                         guild_id = str(guild.id)
-                        key = f"{user_id}_{guild_id}"
+                        key = get_record_key(user_id, guild_id)
                         
                         record = user_data.get(key) or user_data.get(user_id)
                         # Якщо людини немає в БД або вона ще не проходила ознайомлення
@@ -182,7 +182,8 @@ class StartIntroView(discord.ui.View):
             "answers": [], 
             "role": None, 
             "voice_done": False, 
-            "cmd_done": False
+            "cmd_done": False,
+            "guild_id": interaction.guild_id or (self.cog.intro_sessions.get(user_id, {}).get("guild_id"))
         }
         await self.send_step(interaction, 1)
 
@@ -311,11 +312,26 @@ class RoleView(discord.ui.View):
     def make_callback(self, role_name):
         async def callback(interaction: discord.Interaction):
             user_id = interaction.user.id
+            session = self.cog.intro_sessions.get(user_id)
+            if not session or not session.get("guild_id"):
+                await interaction.response.send_message("❌ Помилка: не вдалося знайти сервер. Спробуйте почати спочатку.", ephemeral=True)
+                return
+
+            guild = self.cog.bot.get_guild(int(session["guild_id"]))
+            if not guild:
+                await interaction.response.send_message("❌ Помилка: сервер бота не знайдено.", ephemeral=True)
+                return
+
+            member = guild.get_member(user_id)
+            if not member:
+                # Спробуємо зафетчити, якщо не в кеші
+                try:
+                    member = await guild.fetch_member(user_id)
+                except:
+                    await interaction.response.send_message("❌ Помилка: вас не знайдено на сервері клану.", ephemeral=True)
+                    return
+
             self.cog.intro_sessions[user_id]["role"] = role_name
-            
-            guild = interaction.guild
-            member = interaction.user
-            
             await interaction.response.defer(ephemeral=True)
             
             try:
@@ -346,14 +362,23 @@ class CheckTaskView(discord.ui.View):
 
     @discord.ui.button(label="🔄 Перевірити виконання", style=discord.ButtonStyle.primary)
     async def check(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # В реальності тут була б складна логіка перевірки через базу або кеш
-        # Для демонстрації ми просто "віримо" користувачу або даємо заглушку
-        # Можна додати перевірку voice_state прямо тут:
-        member = interaction.guild.get_member(interaction.user.id)
+        user_id = interaction.user.id
+        session = self.cog.intro_sessions.get(user_id)
+        if not session or not session.get("guild_id"):
+            await interaction.response.send_message("❌ Помилка сесії. Спробуйте почати спочатку.", ephemeral=True)
+            return
+
+        guild = self.cog.bot.get_guild(int(session["guild_id"]))
+        member = guild.get_member(user_id) if guild else None
+        
+        if not member:
+            await interaction.response.send_message("❌ Не вдалося знайти вас на сервері для перевірки голосу.", ephemeral=True)
+            return
+
         is_in_voice = member.voice is not None
         
         if is_in_voice:
-            await interaction.response.send_message("✅ Голосовий зв'язок перевірено! Команди теж (заглушка).", ephemeral=True)
+            await interaction.response.send_message("✅ Голосовий зв'язок перевірено!", ephemeral=True)
             await StartIntroView(self.cog).send_step(interaction, 5)
         else:
             await interaction.response.send_message("❌ Зайдіть, будь ласка, у будь-який голосовий канал сервера.", ephemeral=True)
@@ -366,7 +391,18 @@ class FinalView(discord.ui.View):
 
     @discord.ui.button(label="✅ Завершити та приєднатися", style=discord.ButtonStyle.success)
     async def finish(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.cog.finish_intro(interaction.user)
+        user_id = interaction.user.id
+        session = self.cog.intro_sessions.get(user_id)
+        guild_id = session.get("guild_id") if session else None
+        
+        guild = self.cog.bot.get_guild(int(guild_id)) if guild_id else None
+        member = guild.get_member(user_id) if guild else None
+        
+        if not member:
+            # Спробуємо використати interaction.user, але handle_success очікує Member
+            member = interaction.user 
+
+        await self.cog.finish_intro(member)
         await interaction.response.edit_message(content="🎉 Вітаємо! Ви тепер повноправний учасник клану. Канали відкрито!", embed=None, view=None)
 
 async def setup(bot):

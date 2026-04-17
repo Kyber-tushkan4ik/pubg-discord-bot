@@ -20,14 +20,29 @@ async def send_log(client, message):
         except Exception as e:
             print(f"Помилка лог-каналу: {e}")
 
-async def handle_success(member: discord.Member):
+async def handle_success(member):
+    # Якщо передано User (наприклад, з DM), намагаємося знайти його на сервері
+    guild = getattr(member, 'guild', None)
+    if not guild:
+        # Шукаємо сервер, де є роль адаптації з конфігу серед усіх серверів бота
+        for g in member.client.guilds:
+            if discord.utils.get(g.roles, name=CONFIG.get("ROLE_ADAPT")):
+                guild = g
+                # Оновлюємо member до об'єкта Member цього сервера
+                member = g.get_member(member.id) or await g.fetch_member(member.id)
+                break
+    
+    if not guild or not hasattr(member, 'roles'):
+        create_log(f"[ERROR] Could not find guild context or member roles for {member}")
+        print(f"Error giving role: Could not find guild context or member roles for {member}")
+        return
+
     create_log(f"[SUCCESS] {member.name} (ID: {member.id}) passed clan introduction.")
     try:
-        guild = member.guild
         role_adapt = discord.utils.get(guild.roles, name=CONFIG.get("ROLE_ADAPT"))
         role_success = discord.utils.get(guild.roles, name=CONFIG.get("ROLE_SUCCESS"))
 
-        if role_adapt in member.roles:
+        if role_adapt and role_adapt in member.roles:
             await member.remove_roles(role_adapt)
         if role_success:
             await member.add_roles(role_success)
@@ -56,11 +71,13 @@ async def handle_success(member: discord.Member):
         try:
             await member.send(embed=embed)
             create_log(f"[DM SENT] To: {member.name} Content: 🎉 Ознайомлення завершено!")
-        except:
-            create_log(f"[DM FAILED] User {member.name} has DMs closed.")
+        except Exception as dm_err:
+            create_log(f"[DM FAILED] User {member.name} has DMs closed: {dm_err}")
 
-        await send_log(member.client, f"✅ Користувач **{member.mention}** успішно пройшов ознайомлення та приєднався до клану!")
+        client = member.client if hasattr(member, 'client') else guild.me.client
+        await send_log(client, f"✅ Користувач **{member.mention}** успішно пройшов ознайомлення та приєднався до клану!")
     except Exception as e:
+        create_log(f"[ERROR] handle_success: {e}")
         print(f"Error in handle_success: {e}")
 
 # Функції check_user, check_all_users та perform_startup_scan видалені, 
