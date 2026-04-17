@@ -127,27 +127,67 @@ class PubgCog(commands.Cog):
                 return
                 
             embed = discord.Embed(title=f"📊 Статистика PUBG: {nickname}", color=0xFF9900)
-            embed.add_field(name="Режим", value=best_mode, inline=True)
-            embed.add_field(name="Матчі", value=best_stats.get("roundsPlayed", 0), inline=True)
-            embed.add_field(name="Перемоги", value=best_stats.get("wins", 0), inline=True)
-            embed.add_field(name="Вбивства", value=best_stats.get("kills", 0), inline=True)
+            
+            mode_map = {
+                "squad": "Команди TPP",
+                "squad-fpp": "Команди FPP",
+                "duo": "Дуо TPP",
+                "duo-fpp": "Дуо FPP",
+                "solo": "Соло TPP",
+                "solo-fpp": "Соло FPP"
+            }
+            nice_best_mode = mode_map.get(best_mode, best_mode.upper())
+            
+            embed.add_field(name="Найкращий режим", value=f"`{nice_best_mode}`", inline=True)
+            embed.add_field(name="Матчі (Life)", value=best_stats.get("roundsPlayed", 0), inline=True)
+            embed.add_field(name="Перемоги (Life)", value=best_stats.get("wins", 0), inline=True)
+            embed.add_field(name="Вбивства (Life)", value=best_stats.get("kills", 0), inline=True)
             
             deaths = best_stats.get("losses", 1)
             kills = best_stats.get("kills", 0)
             kd = kills / max(deaths, 1)
-            embed.add_field(name="K/D", value=f"{kd:.2f}", inline=True)
-            embed.add_field(name="Шкода (avg)", value=f"{(best_stats.get('damageDealt', 0) / max(max_rounds, 1)):.0f}", inline=True)
+            embed.add_field(name="K/D Ratio", value=f"**{kd:.2f}**", inline=True)
+            embed.add_field(name="Сер. шкода", value=f"{round(best_stats.get('damageDealt', 0) / max(max_rounds, 1))}", inline=True)
             
-            # Fetch last match info
+            # Отримання даних останнього матчу
             last_match_date = await get_latest_match_date(player)
             if last_match_date:
                 try:
-                    # Parse PUBG ISO date (e.g. 2023-10-27T14:48:22Z)
+                    rel_matches = player.get("relationships", {}).get("matches", {}).get("data", [])
+                    if rel_matches:
+                        last_mid = rel_matches[0]["id"]
+                        m_data = await get_match(last_mid)
+                        if m_data and "data" in m_data:
+                            attr = m_data["data"]["attributes"]
+                            m_mode = mode_map.get(attr.get("gameMode"), attr.get("gameMode", "").upper())
+                            
+                            # Пошук статистики гравця в матчі
+                            m_stats = None
+                            for inc in m_data.get("included", []):
+                                if inc["type"] == 'participant' and inc.get("attributes", {}).get("stats", {}).get("playerId") == player["id"]:
+                                    m_stats = inc["attributes"]["stats"]
+                                    break
+                            
+                            if m_stats:
+                                m_place = m_stats.get("winPlace")
+                                m_kills = m_stats.get("kills")
+                                m_dmg = round(m_stats.get("damageDealt", 0))
+                                
+                                emoji = "🏆" if m_place == 1 else "💀"
+                                embed.add_field(
+                                    name="🕒 Останній матч", 
+                                    value=(f"**Режим:** `{m_mode}`\n"
+                                           f"**Місце:** {emoji} `{m_place}`\n"
+                                           f"**Вбивства:** `💀 {m_kills}`\n"
+                                           f"**Шкода:** `🎯 {m_dmg}`"), 
+                                    inline=False
+                                )
+                    
                     dt = datetime.fromisoformat(last_match_date.replace('Z', '+00:00'))
                     ts = int(dt.timestamp())
-                    embed.add_field(name="Останній матч", value=f"<t:{ts}:R>", inline=True)
+                    embed.set_footer(text=f"Остання гра була {dt.strftime('%d.%m.%Y %H:%M')} (UTC)")
                 except Exception as e:
-                    print(f"Error parsing date: {e}")
+                    print(f"Error parsing last match: {e}")
 
             cooldowns[user_id] = int(time.time() * 1000)
             await interaction.followup.send(embed=embed)

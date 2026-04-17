@@ -462,9 +462,31 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                                         clan_winners.append(f"• {m} — 💀 Вбивств: **{p_stats.get('kills', 0)}** | 🎯 Шкода: **{round(p_stats.get('damageDealt', 0))}**")
                         
                         if win_channel and clan_winners:
+                            # Визначаємо режим гри
+                            m_attr = match.get("data", {}).get("attributes", {})
+                            raw_mode = m_attr.get("gameMode", "squad")
+                            
+                            mode_map = {
+                                "squad": "Команди TPP",
+                                "squad-fpp": "Команди FPP",
+                                "duo": "Дуо TPP",
+                                "duo-fpp": "Дуо FPP",
+                                "solo": "Соло TPP",
+                                "solo-fpp": "Соло FPP"
+                            }
+                            nice_mode = mode_map.get(raw_mode, raw_mode.upper())
+                            map_name = m_attr.get("mapName", "PUBG")
+                            
                             is_squad = len(clan_winners) > 1
                             title = '🍗 ПЕРЕМОГА СКВАДУ!' if is_squad else '🍗 ПЕРЕМОГА!'
-                            embed = discord.Embed(title=title, description="Наші розносять лобі!\n\n" + "\n".join(clan_winners), color=0xFFCC00)
+                            
+                            embed = discord.Embed(
+                                title=title, 
+                                description=f"Наші розносять лобі! 🚀\n\n**Режим:** `{nice_mode}`\n**Карта:** `{map_name}`\n\n" + "\n".join(clan_winners), 
+                                color=0xFFCC00
+                            )
+                            embed.set_footer(text="Результати конкретного матчу")
+                            
                             await win_channel.send(content=f"🎉 Вітаємо {' '.join(mentions)}!", embed=embed)
                         create_log(f"[WIN] Перемога зафіксована для матчу {mid} ({len(clan_winners)} гравців з клану)!")
                 
@@ -498,8 +520,19 @@ async def process_single_player_stats_and_ranks(bot, key, p, pubg_data, debug_ch
             return
 
         gm_stats = stats["attributes"]["gameModeStats"]
-        squad_stats = gm_stats.get('squad-fpp') or gm_stats.get('squad') or gm_stats.get('squadFPP')
-        if not squad_stats:
+        
+        # Вибираємо режим з найбільшою кількістю зіграних раундів серед доступних Squad-режимів
+        modes_to_check = ['squad-fpp', 'squad', 'squadFPP']
+        squad_stats = None
+        max_rounds = -1
+        
+        for m_name in modes_to_check:
+            m_data = gm_stats.get(m_name)
+            if m_data and m_data.get('roundsPlayed', 0) > max_rounds:
+                max_rounds = m_data.get('roundsPlayed', 0)
+                squad_stats = m_data
+                
+        if not squad_stats or max_rounds == 0:
             if debug_channel: await debug_channel.send(f"🔍 Гравця **{p_nickname}**: Немає даних для режиму Squad.")
             return
 
