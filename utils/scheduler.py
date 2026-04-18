@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from .data_handler import get_data, save_data, mark_dirty, get_settings, save_settings
 from .pubg_api import get_player, get_player_season_stats, get_latest_match_date, get_match, get_players_batch
-from .helpers import create_log, ms_to_readable
+from .helpers import create_log, ms_to_readable, translate_map
 from .achievements import check_achievements
 from .records import check_records
 from .image_generator import generate_victory_card
@@ -476,7 +476,7 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                                 "solo-fpp": "Соло FPP"
                             }
                             nice_mode = mode_map.get(raw_mode, raw_mode.upper())
-                            map_name = m_attr.get("mapName", "PUBG")
+                            map_name = translate_map(m_attr.get("mapName", "PUBG"))
                             
                             is_squad = len(clan_winners) > 1
                             title = '🍗 ПЕРЕМОГА СКВАДУ!' if is_squad else '🍗 ПЕРЕМОГА!'

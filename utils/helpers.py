@@ -50,3 +50,10 @@ def find_record(user_data: dict, user_id: str, guild_id: str):
     if user_id in user_data:  # Legacy support
         return user_data[user_id]
     return None
+
+def translate_map(map_id: str) -> str:
+    """Перекладає ідентифікатор карти PUBG у зрозумілу назву."""
+    if not map_id:
+        return "PUBG"
+    maps = CONFIG.get("MAP_NAMES", {})
+    return maps.get(map_id, map_id)

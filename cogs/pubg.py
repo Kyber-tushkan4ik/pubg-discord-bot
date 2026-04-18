@@ -11,7 +11,7 @@ import asyncio
 from datetime import datetime, timedelta
 from utils.data_handler import get_data, get_settings
 from utils.pubg_api import get_player, get_player_season_stats, get_matches, get_latest_match_date
-from utils.helpers import find_record
+from utils.helpers import find_record, translate_map
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../config.json')
 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
@@ -430,7 +430,7 @@ class PubgCog(commands.Cog):
                 
                 attr = match.get("data", {}).get("attributes", {})
                 mode = attr.get("gameMode", "").upper()
-                map_n = attr.get("mapName", "")
+                map_n = translate_map(attr.get("mapName", ""))
                 duration = f"{int(attr.get('duration', 0) // 60)}m"
                 
                 participant = next((inc for inc in match["included"] if inc.get("type") == "participant" and inc.get("attributes", {}).get("stats", {}).get("playerId") == player["id"]), None)

@@ -119,5 +119,18 @@
     "INACTIVITY_DAYS_LIMIT": 14,
     "WEEKLY_REPORT_CHANNEL_ID": "1458611623139737670",
     "WIN_NOTIF_CHANNEL_ID": "1458611623139737670",
-    "API_DELAY_MS": 15000
+    "API_DELAY_MS": 15000,
+    "MAP_NAMES": {
+        "Baltic_Main": "Ерангель",
+        "Desert_Main": "Мірамар",
+        "Savage_Main": "Санок",
+        "DihorOtok_Main": "Вікенді",
+        "Tiger_Main": "Таего",
+        "Kiki_Main": "Дестон",
+        "Neon_Main": "Рондо",
+        "Chimera_Main": "Парамо",
+        "Summerland_Main": "Каракін",
+        "Heaven_Main": "Хевен",
+        "Range_Main": "Табір Джеккал"
+    }
 }
