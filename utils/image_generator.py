@@ -8,20 +8,28 @@ def generate_victory_card(nickname, kills, damage, output_path="assets/temp_vict
     Генерує зображення 1024x1024 з текстом поверх ігрового фону.
     """
     assets_dir = os.path.join(os.path.dirname(__file__), '../assets')
-    template_path = os.path.join(assets_dir, 'victory_card_1.png')
     font_path = os.path.join(assets_dir, 'font.ttf')
     
-    if not os.path.exists(template_path):
-        template_path = os.path.join(assets_dir, 'victory_card_3.png')
+    # Спробуємо знайти будь-який доступний шаблон
+    templates = [
+        os.path.join(assets_dir, 'victory_card_1.png'),
+        os.path.join(assets_dir, 'victory_card_2.png'),
+        os.path.join(assets_dir, 'victory_card_3.png')
+    ]
+    
+    template_path = next((t for t in templates if os.path.exists(t)), None)
 
     if not match_date:
         match_date = datetime.now().strftime("%d.%m.%Y")
 
     try:
-        img = Image.open(template_path).convert("RGBA")
-        # Якщо картинка не 1024x1024, підганяємо
-        if img.size != (1024, 1024):
-            img = img.resize((1024, 1024), Image.LANCZOS)
+        if template_path:
+            img = Image.open(template_path).convert("RGBA")
+        else:
+            # Створюємо порожній фон, якщо шаблонів взагалі немає (щоб не падати з помилкою)
+            img = Image.new("RGBA", (1024, 1024), (20, 20, 20, 255))
+            draw = ImageDraw.Draw(img)
+            draw.rectangle([50, 50, 974, 974], outline=(235, 210, 150, 100), width=5)
         
         draw = ImageDraw.Draw(img)
         width, height = img.size

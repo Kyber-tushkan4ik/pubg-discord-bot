@@ -152,13 +152,22 @@ ACHIEVEMENTS = [
         "id": 'hoarder',
         "name": '🛒 Барахольник',
         "description": 'Підняти 15 або більше різних видів зброї за один матч.',
-        "condition": lambda stats: stats.get('weaponsAcquired', 0) >= 15,
+        "condition": lambda stats, mode=None: stats.get('weaponsAcquired', 0) >= 15,
         "secret": True
+    },
+    {
+        "id": 'tushkanchik',
+        "name": '🐰 Тушканчік',
+        "description": 'Зробити 50 або більше вбивств у режимі TDM за один матч.',
+        "condition": lambda stats, mode=None: mode == 'tdm' and stats.get('kills', 0) >= 50,
+        "secret": True,
+        "super_secret": True, # Не показувати опис та умову взагалі
+        "role_reward": "Тушканчік"
     }
 ]
 
-async def check_achievements(client: discord.Client, user_id: str, pubg_nickname: str, stats: dict, channel_id: str = None):
-    unlocked = [ach for ach in ACHIEVEMENTS if ach["condition"](stats)]
+async def check_achievements(client: discord.Client, user_id: str, pubg_nickname: str, stats: dict, channel_id: str = None, game_mode: str = None):
+    unlocked = [ach for ach in ACHIEVEMENTS if ach["condition"](stats, game_mode)]
     if not unlocked:
         return
 
@@ -182,20 +191,63 @@ async def check_achievements(client: discord.Client, user_id: str, pubg_nickname
                     (user_id, ach["id"], now)
                 )
                 
+                # Обробка ролі за виграш (нагорода)
+                if ach.get("role_reward"):
+                    try:
+                        from .data_handler import get_data
+                        u_data = get_data().get(f"{user_id}-{client.guilds[0].id}") or get_data().get(user_id) # Наближений пошук гільдії
+                        guild_id = u_data.get("guildId") if u_data else None
+                        
+                        if guild_id:
+                            guild = client.get_guild(int(guild_id))
+                            if guild:
+                                member = guild.get_member(int(user_id))
+                                if not member:
+                                    try: member = await guild.fetch_member(int(user_id))
+                                    except: pass
+                                
+                                if member:
+                                    role_name = ach["role_reward"]
+                                    role = discord.utils.get(guild.roles, name=role_name)
+                                    if not role:
+                                        role = await guild.create_role(name=role_name, color=discord.Color.orange())
+                                    
+                                    if role not in member.roles:
+                                        await member.add_roles(role)
+                                        # Відправка DM
+                                        try:
+                                            await member.send("Вітаємо! Ти зміг перевершити себе і продовжуй в тому ж дусі 🎉")
+                                        except:
+                                            pass # Приватні повідомлення закриті
+                    except Exception as re:
+                        print(f"Error granting achievement role: {re}")
+
                 if channel:
                     is_secret = ach.get("secret", False)
-                    title = '🤫 Секретне Досягнення!' if is_secret else '🏆 Нове Досягнення!'
-                    color = 0x9B59B6 if is_secret else 0xFFD700
-                    prefix = "🎉" if not is_secret else "👀"
+                    is_super_secret = ach.get("super_secret", False)
+                    
+                    if is_super_secret:
+                        title = '🤫 Секретний статус розблоковано!'
+                        description = f'👀 Гравець **{pubg_nickname}** розблокував щось надзвичайно рідкісне!'
+                        color = 0x2C3E50 # Дуже темний колір
+                    else:
+                        title = '🤫 Секретне Досягнення!' if is_secret else '🏆 Нове Досягнення!'
+                        description = f'🎉 Гравець **{pubg_nickname}** розблокував досягнення **{ach["name"]}**!'
+                        color = 0x9B59B6 if is_secret else 0xFFD700
                     
                     embed = discord.Embed(
                         title=title,
-                        description=f'{prefix} Гравець **{pubg_nickname}** розблокував досягнення **{ach["name"]}**!',
+                        description=description,
                         color=color
                     )
-                    embed.add_field(name='Опис', value=ach["description"])
+                    
+                    if not is_super_secret:
+                        embed.add_field(name='Опис', value=ach["description"])
+                    else:
+                        embed.set_footer(text="Умова отримання залишається в таємниці...")
+                        
                     await channel.send(embed=embed)
-                    await asyncio.sleep(2.0) # Затримка проти спаму
+                    await asyncio.sleep(2.0)
                     
         conn.commit()
         conn.close()

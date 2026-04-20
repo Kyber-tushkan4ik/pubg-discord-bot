@@ -2,14 +2,25 @@ import sys
 import os
 import json
 import discord
+import logging
+from logging.handlers import RotatingFileHandler
+import time
 from discord import app_commands
-from datetime import datetime
+from datetime import datetime, timedelta
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../config.json')
 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
     CONFIG = json.load(f)
 
 LOG_FILE = os.path.join(os.path.dirname(__file__), '../logs.txt')
+
+# Налаштування логера з ротацією (5 MB, 3 бекапи)
+logger = logging.getLogger("PubgBot")
+logger.setLevel(logging.INFO)
+handler = RotatingFileHandler(LOG_FILE, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
+formatter = logging.Formatter('[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 def is_admin_check(interaction: discord.Interaction) -> bool:
     """Перевіряє чи є користувач адміністратором або модератором."""
@@ -23,17 +34,43 @@ def is_admin():
     return app_commands.check(is_admin_check)
 
 def create_log(message: str):
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    log_line = f"[{timestamp}] {message}"
+    """Логує повідомлення у консоль та файл з ротацією."""
     try:
-        print(log_line)
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}")
     except UnicodeEncodeError:
-        print(log_line.encode('ascii', errors='replace').decode('ascii'))
+        pass # print(message.encode('ascii', errors='replace').decode('ascii'))
+    
     try:
-        with open(LOG_FILE, 'a', encoding='utf-8') as f:
-            f.write(log_line + '\n')
+        logger.info(message)
     except Exception as e:
         print(f"Failed to write log: {e}")
+
+def cleanup_old_assets(max_age_hours=24):
+    """Видаляє старі тимчасові зображення з папки assets."""
+    assets_dir = os.path.join(os.path.dirname(__file__), '../assets')
+    if not os.path.exists(assets_dir):
+        return
+    
+    count = 0
+    now = time.time()
+    for filename in os.listdir(assets_dir):
+        if filename.startswith('victory_') and filename.endswith('.png'):
+            file_path = os.path.join(assets_dir, filename)
+            # Не чіпаємо шаблони victory_card_N.png
+            if 'card_' in filename:
+                continue
+                
+            try:
+                if os.path.isfile(file_path):
+                    file_age = now - os.path.getmtime(file_path)
+                    if file_age > (max_age_hours * 3600):
+                        os.remove(file_path)
+                        count += 1
+            except Exception as e:
+                create_log(f"[CLEANUP ERROR] {filename}: {e}")
+    
+    if count > 0:
+        create_log(f"[CLEANUP] Видалено {count} старих зображень перемог.")
 
 def ms_to_readable(ms: int) -> str:
     hours = ms // 3600000

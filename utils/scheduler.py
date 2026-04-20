@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from .data_handler import get_data, save_data, mark_dirty, get_settings, save_settings
 from .pubg_api import get_player, get_player_season_stats, get_latest_match_date, get_match, get_players_batch
-from .helpers import create_log, ms_to_readable, translate_map
+from .helpers import create_log, ms_to_readable, translate_map, cleanup_old_assets
 from .achievements import check_achievements
 from .records import check_records
 from .image_generator import generate_victory_card
@@ -78,7 +78,8 @@ def init_scheduler(client: discord.Client):
                 await save_data()
                 settings["lastWeeklyResetDate"] = today_str
                 await save_settings()
-                create_log("[SCHEDULER] Тижневу статистику скинуто.")
+                cleanup_old_assets(max_age_hours=0) # Глибоке очищення всіх тимчасових файлів щопонеділка
+                create_log("[SCHEDULER] Тижневу статистику скинуто, проведено глибоке очищення файлів.")
 
         # Щомісячний звіт та скидання (1-ше число)
         if time.localtime().tm_mday == 1 and settings.get("lastMonthlyReportDate") != today_str:
@@ -98,6 +99,7 @@ def init_scheduler(client: discord.Client):
     @tasks.loop(minutes=60)
     async def hourly_tasks():
         await update_stats_and_ranks(client)
+        cleanup_old_assets() # Додаємо очищення старих зображень
 
     @tasks.loop(minutes=30)
     async def match_check_tasks():
@@ -462,71 +464,78 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                                         mentions.append(m)
                                         clan_winners.append(f"• {m} — 💀 Вбивств: **{p_stats.get('kills', 0)}** | 🎯 Шкода: **{round(p_stats.get('damageDealt', 0))}**")
                         
-                        if win_channel and clan_winners:
                             # Визначаємо режим гри
                             m_attr = match.get("data", {}).get("attributes", {})
                             raw_mode = m_attr.get("gameMode", "squad")
                             
-                            mode_map = {
-                                "squad": "Команди TPP",
-                                "squad-fpp": "Команди FPP",
-                                "duo": "Дуо TPP",
-                                "duo-fpp": "Дуо FPP",
-                                "solo": "Соло TPP",
-                                "solo-fpp": "Соло FPP"
-                            }
-                            nice_mode = mode_map.get(raw_mode, raw_mode.upper())
-                            map_name = translate_map(m_attr.get("mapName", "PUBG"))
-                            
-                            is_squad = len(clan_winners) > 1
-                            title = '🍗 ПЕРЕМОГА СКВАДУ!' if is_squad else '🍗 ПЕРЕМОГА!'
-                            
-                            embed = discord.Embed(
-                                title=title, 
-                                description=f"Наші розносять лобі! 🚀\n\n**Режим:** `{nice_mode}`\n**Карта:** `{map_name}`\n\n" + "\n".join(clan_winners), 
-                                color=0xFFCC00
-                            )
-                            embed.set_footer(text="Результати конкретного матчу")
-
-                            # Генерація преміальних карток для переможців
-                            sent_with_image = False
-                            for inc in match.get("included", []):
-                                if inc["type"] == 'participant' and inc.get("attributes", {}).get("stats", {}).get("winPlace") == 1:
-                                    n_low = inc.get("attributes", {}).get("stats", {}).get("name", "").lower()
-                                    if n_low in clan_users_low:
-                                        p_stats = inc["attributes"]["stats"]
-                                        nick = p_stats.get("name")
-                                        kills = p_stats.get("kills", 0)
-                                        dmg = round(p_stats.get("damageDealt", 0))
-                                        
-                                        # Генеруємо картинку
-                                        card_path = f"assets/victory_{mid}_{nick}.png"
-                                        
-                                        # Отримання дати матчу
-                                        m_date = None
-                                        try:
-                                            c_at_str = m_attr.get("createdAt", "")
-                                            if c_at_str:
-                                                dt = datetime.fromisoformat(c_at_str.replace('Z', '+00:00'))
-                                                m_date = dt.strftime("%d.%m.%Y")
-                                        except: pass
-                                        
-                                        final_path = generate_victory_card(nick, kills, dmg, card_path, match_date=m_date)
-                                        
-                                        if final_path and os.path.exists(final_path):
-                                            file = discord.File(final_path, filename=f"victory_{nick}.png")
-                                            embed.set_image(url=f"attachment://victory_{nick}.png")
-                                            await win_channel.send(content=f"🎉 Вітаємо {' '.join(mentions)}!", embed=embed, file=file)
-                                            sent_with_image = True
-                                            break # Тільки одну картинку на сквад (основну)
-                            
-                            if not sent_with_image:
-                                await win_channel.send(content=f"🎉 Вітаємо {' '.join(mentions)}!", embed=embed)
-
-                        create_log(f"[WIN] Перемога зафіксована для матчу {mid} ({len(clan_winners)} гравців з клану)!")
+                            # Фільтрація TDM
+                            if raw_mode == 'tdm':
+                                create_log(f"[TDM] Пропуск перемоги у TDM для {p_nickname}")
+                            else:
+                                mode_map = {
+                                    "squad": "Команди TPP",
+                                    "squad-fpp": "Команди FPP",
+                                    "duo": "Дуо TPP",
+                                    "duo-fpp": "Дуо FPP",
+                                    "solo": "Соло TPP",
+                                    "solo-fpp": "Соло FPP"
+                                }
+                                nice_mode = mode_map.get(raw_mode, raw_mode.upper())
+                                map_name = translate_map(m_attr.get("mapName", "PUBG"))
+                                
+                                is_squad = len(clan_winners) > 1
+                                title = '🍗 ПЕРЕМОГА СКВАДУ!' if is_squad else '🍗 ПЕРЕМОГА!'
+                                
+                                match_url = f"https://pubglookup.com/matches/{mid}"
+                                embed = discord.Embed(
+                                    title=title, 
+                                    url=match_url,
+                                    description=f"Наші розносять лобі! 🚀\n\n**Режим:** `{nice_mode}`\n**Карта:** `{map_name}`\n\n" + "\n".join(clan_winners), 
+                                    color=0xFFCC00
+                                )
+                                embed.add_field(name="🔗 Підтвердження", value=f"[Переглянути деталі на PUBG Lookup]({match_url})", inline=False)
+                                embed.set_footer(text="Офіційні дані PUBG API")
+    
+                                # Генерація преміальних карток для переможців
+                                sent_with_image = False
+                                for inc in match.get("included", []):
+                                    if inc["type"] == 'participant' and inc.get("attributes", {}).get("stats", {}).get("winPlace") == 1:
+                                        n_low = inc.get("attributes", {}).get("stats", {}).get("name", "").lower()
+                                        if n_low in clan_users_low:
+                                            p_stats = inc["attributes"]["stats"]
+                                            nick = p_stats.get("name")
+                                            kills = p_stats.get("kills", 0)
+                                            dmg = round(p_stats.get("damageDealt", 0))
+                                            
+                                            # Генеруємо картинку
+                                            card_path = f"assets/victory_{mid}_{nick}.png"
+                                            
+                                            # Отримання дати матчу
+                                            m_date = None
+                                            try:
+                                                c_at_str = m_attr.get("createdAt", "")
+                                                if c_at_str:
+                                                    dt = datetime.fromisoformat(c_at_str.replace('Z', '+00:00'))
+                                                    m_date = dt.strftime("%d.%m.%Y")
+                                            except: pass
+                                            
+                                            final_path = generate_victory_card(nick, kills, dmg, card_path, match_date=m_date)
+                                            
+                                            if final_path and os.path.exists(final_path):
+                                                file = discord.File(final_path, filename=f"victory_{nick}.png")
+                                                embed.set_image(url=f"attachment://victory_{nick}.png")
+                                                await win_channel.send(content=f"🎉 Вітаємо {' '.join(mentions)}!", embed=embed, file=file)
+                                                sent_with_image = True
+                                                break # Тільки одну картинку на сквад (основну)
+                                
+                                if not sent_with_image:
+                                    await win_channel.send(content=f"🎉 Вітаємо {' '.join(mentions)}!", embed=embed)
+    
+                                create_log(f"[WIN] Перемога зафіксована для матчу {mid} ({len(clan_winners)} гравців з клану)!")
                 
                 if p.get("userId"):
-                    await check_achievements(client, p["userId"], p_nickname, stats, win_channel_id)
+                    m_attr = match.get("data", {}).get("attributes", {})
+                    await check_achievements(client, p["userId"], p_nickname, stats, win_channel_id, game_mode=m_attr.get("gameMode"))
                 await check_records(p, stats)
                 
                 # Оновлення тижневої/місячної статистики
