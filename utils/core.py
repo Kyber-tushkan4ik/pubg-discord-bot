@@ -125,6 +125,7 @@ async def perform_startup_scan(client: discord.Client):
                 c_record = user_data.get(key) or user_data.get(str(member.id))
                 if not c_record.get("lastPubgSeen") and is_playing:
                     c_record["lastPubgSeen"] = now
+                    mark_dirty(key)
                     count += 1
 
     if count > 0:

@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 import sqlite3
 import os
+import asyncio
 from utils.data_handler import DB_FILE
 from utils.helpers import is_admin
 
@@ -10,26 +11,28 @@ class WeaponsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    def get_weapon(self, search_str):
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM weapons WHERE id = ? OR name LIKE ?", (search_str.lower(), f"%{search_str}%"))
-        row = cursor.fetchone()
-        conn.close()
-        
-        if row:
-            return {
-                "id": row[0], "name": row[1], "damage": row[2], 
-                "velocity": row[3], "fireRate": row[4], 
-                "reloadTime": row[5], "btk": row[6]
-            }
-        return None
+    async def get_weapon(self, search_str):
+        def _get():
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM weapons WHERE id = ? OR name LIKE ?", (search_str.lower(), f"%{search_str}%"))
+            row = cursor.fetchone()
+            conn.close()
+            
+            if row:
+                return {
+                    "id": row[0], "name": row[1], "damage": row[2], 
+                    "velocity": row[3], "fireRate": row[4], 
+                    "reloadTime": row[5], "btk": row[6]
+                }
+            return None
+        return await asyncio.to_thread(_get)
 
     @app_commands.command(name="compare", description="Порівняти дві зброї")
     @app_commands.describe(weapon1="Перша зброя (наприклад: m416)", weapon2="Друга зброя (наприклад: beryl)")
     async def compare(self, interaction: discord.Interaction, weapon1: str, weapon2: str):
-        w1_data = self.get_weapon(weapon1)
-        w2_data = self.get_weapon(weapon2)
+        w1_data = await self.get_weapon(weapon1)
+        w2_data = await self.get_weapon(weapon2)
         
         if not w1_data:
             await interaction.response.send_message(f"❌ Зброю **{weapon1}** не знайдено.", ephemeral=True)
@@ -90,7 +93,7 @@ class WeaponsCog(commands.Cog):
         app_commands.Choice(name="Compensator (AR: -15% Vert, -10% Horiz)", value="comp")
     ])
     async def attach(self, interaction: discord.Interaction, weapon: str, attachment: app_commands.Choice[str]):
-        w_data = self.get_weapon(weapon)
+        w_data = await self.get_weapon(weapon)
         if not w_data:
             await interaction.response.send_message(f"❌ Зброю **{weapon}** не знайдено.", ephemeral=True)
             return
@@ -119,14 +122,16 @@ class WeaponsCog(commands.Cog):
     @is_admin()
     async def add_weapon(self, interaction: discord.Interaction, w_id: str, name: str, damage: float, velocity: float, fire_rate: float, reload_time: float, btk: int = 4):
         try:
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO weapons (id, name, damage, velocity, fireRate, reloadTime, btk)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (w_id.lower(), name, damage, velocity, fire_rate, reload_time, btk))
-            conn.commit()
-            conn.close()
+            def _add():
+                conn = sqlite3.connect(DB_FILE)
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO weapons (id, name, damage, velocity, fireRate, reloadTime, btk)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (w_id.lower(), name, damage, velocity, fire_rate, reload_time, btk))
+                conn.commit()
+                conn.close()
+            await asyncio.to_thread(_add)
             await interaction.response.send_message(f"✅ Зброю **{name}** успішно додано!", ephemeral=True)
         except sqlite3.IntegrityError:
             await interaction.response.send_message(f"❌ Зброя з ID `{w_id}` вже існує. Використайте `/edit_weapon`.", ephemeral=True)
@@ -142,16 +147,21 @@ class WeaponsCog(commands.Cog):
             return
             
         try:
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            query = f"UPDATE weapons SET {param} = ? WHERE id = ?"
-            cursor.execute(query, (value, w_id.lower()))
-            if cursor.rowcount == 0:
+            def _edit():
+                conn = sqlite3.connect(DB_FILE)
+                cursor = conn.cursor()
+                query = f"UPDATE weapons SET {param} = ? WHERE id = ?"
+                cursor.execute(query, (value, w_id.lower()))
+                rowcount = cursor.rowcount
+                conn.commit()
+                conn.close()
+                return rowcount
+                
+            rc = await asyncio.to_thread(_edit)
+            if rc == 0:
                 await interaction.response.send_message(f"❌ Зброю з ID `{w_id}` не знайдено.", ephemeral=True)
             else:
                 await interaction.response.send_message(f"✅ Для **{w_id}** оновлено `{param}` = {value}", ephemeral=True)
-            conn.commit()
-            conn.close()
         except Exception as e:
             await interaction.response.send_message(f"❌ Помилка: {e}", ephemeral=True)
 

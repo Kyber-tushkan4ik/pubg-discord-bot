@@ -60,7 +60,14 @@ class ClanIntroCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.intro_sessions = {} # user_id -> state
+        self.auto_invite_task = None
+
+    async def cog_load(self):
         self.auto_invite_task = self.bot.loop.create_task(self.auto_invite_loop())
+
+    async def cog_unload(self):
+        if self.auto_invite_task:
+            self.auto_invite_task.cancel()
 
     async def auto_invite_loop(self):
         """Фонова задача для автоматичного запрошення людей з роллю Адаптація."""

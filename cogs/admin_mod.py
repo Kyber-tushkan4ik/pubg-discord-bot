@@ -140,7 +140,7 @@ class AdminCog(commands.Cog):
     async def manage_tracking_role(self, interaction: discord.Interaction, enabled: bool):
         bot_settings = get_settings()
         bot_settings["disableClanTracking"] = not enabled
-        save_settings()
+        await save_settings()
 
         status_str = 'УВІМКНЕНО' if enabled else 'ВИМКНЕНО'
         role_name = CONFIG.get("ROLE_SUCCESS", "Поплічник")

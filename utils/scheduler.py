@@ -54,13 +54,20 @@ def init_scheduler(client: discord.Client):
     if not _queue_worker_started:
         client.loop.create_task(process_queue())
     
-    @tasks.loop(hours=24)
+    @tasks.loop(minutes=15)
     async def daily_tasks():
-        create_log("[SCHEDULER] Запуск щоденних завдань...")
-        await check_inactivity(client)
-        
         settings = get_settings()
         today_str = time.strftime("%Y-%m-%d")
+        
+        # Виконуємо щоденні завдання лише 1 раз на добу після 00:00 за локальним часом сервера
+        if settings.get("lastDailyRun") == today_str:
+            return
+            
+        settings["lastDailyRun"] = today_str
+        await save_settings()
+
+        create_log("[SCHEDULER] Запуск щоденних завдань...")
+        await check_inactivity(client)
         
         # Щотижневий звіт та скидання статистики (понеділок)
         if time.localtime().tm_wday == 0:
@@ -71,9 +78,10 @@ def init_scheduler(client: discord.Client):
                 
             if settings.get("lastWeeklyResetDate") != today_str:
                 user_data = get_data()
-                for p in user_data.values():
+                for key, p in user_data.items():
                     p["weeklyWins"] = 0
                     p["weeklyKills"] = 0
+                    mark_dirty(key)
                 await save_data()
                 settings["lastWeeklyResetDate"] = today_str
                 await save_settings()
@@ -87,9 +95,10 @@ def init_scheduler(client: discord.Client):
             
             # Скидання місячної статистики
             user_data = get_data()
-            for p in user_data.values():
+            for key, p in user_data.items():
                 p["monthlyWins"] = 0
                 p["monthlyKills"] = 0
+                mark_dirty(key)
             await save_data()
             settings["lastMonthlyResetDate"] = today_str
             await save_settings()
@@ -115,6 +124,7 @@ def init_scheduler(client: discord.Client):
                 if 0 < duration < 3600000:
                     p["totalPlayTime"] = p.get("totalPlayTime", 0) + duration
                     p["lastSessionStart"] = now
+                    mark_dirty(key)
                     count += 1
         if count > 0:
             await save_data()

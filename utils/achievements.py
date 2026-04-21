@@ -172,32 +172,46 @@ async def check_achievements(client: discord.Client, user_id: str, pubg_nickname
         return
 
     try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("SELECT achievementId FROM achievements WHERE userId = ?", (user_id,))
-        owned_ids = [row[0] for row in cursor.fetchall()]
-        
-        new_achievements = [ach for ach in unlocked if ach["id"] not in owned_ids]
+        def fetch_and_save_db():
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute("SELECT achievementId FROM achievements WHERE userId = ?", (user_id,))
+            owned_ids = [row[0] for row in cursor.fetchall()]
+            
+            new_achs = [ach for ach in unlocked if ach["id"] not in owned_ids]
+            
+            if new_achs:
+                now_ms = int(time.time() * 1000)
+                for ach in new_achs:
+                    cursor.execute(
+                        "INSERT INTO achievements (userId, achievementId, dateEarned) VALUES (?, ?, ?)",
+                        (user_id, ach["id"], now_ms)
+                    )
+                conn.commit()
+            conn.close()
+            return new_achs
+
+        new_achievements = await asyncio.to_thread(fetch_and_save_db)
         
         if new_achievements:
-            now = int(time.time() * 1000)
             from .data_handler import get_settings
             target_channel_id = channel_id or get_settings().get("reportsChannelId") or CONFIG.get("WIN_NOTIF_CHANNEL_ID")
             channel = client.get_channel(int(target_channel_id)) if target_channel_id else None
             
             for ach in new_achievements:
-                cursor.execute(
-                    "INSERT INTO achievements (userId, achievementId, dateEarned) VALUES (?, ?, ?)",
-                    (user_id, ach["id"], now)
-                )
-                
                 # Обробка ролі за виграш (нагорода)
                 if ach.get("role_reward"):
                     try:
                         from .data_handler import get_data
-                        u_data = get_data().get(f"{user_id}-{client.guilds[0].id}") or get_data().get(user_id) # Наближений пошук гільдії
-                        guild_id = u_data.get("guildId") if u_data else None
+                        user_data = get_data()
                         
+                        # Більш надійний пошук гільдії (без client.guilds[0])
+                        guild_id = None
+                        for key, val in user_data.items():
+                            if val.get("userId") == str(user_id) and val.get("guildId"):
+                                guild_id = val["guildId"]
+                                break
+                                
                         if guild_id:
                             guild = client.get_guild(int(guild_id))
                             if guild:
@@ -210,6 +224,7 @@ async def check_achievements(client: discord.Client, user_id: str, pubg_nickname
                                     role_name = ach["role_reward"]
                                     role = discord.utils.get(guild.roles, name=role_name)
                                     if not role:
+                                        # Резервне створення, якщо немає прав, викличе помилку, потрібен try/except, але бот повинен мати права.
                                         role = await guild.create_role(name=role_name, color=discord.Color.orange())
                                     
                                     if role not in member.roles:
@@ -249,7 +264,5 @@ async def check_achievements(client: discord.Client, user_id: str, pubg_nickname
                     await channel.send(embed=embed)
                     await asyncio.sleep(2.0)
                     
-        conn.commit()
-        conn.close()
     except Exception as e:
         print(f"Помилка перевірки досягнень: {e}")
