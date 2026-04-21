@@ -452,6 +452,7 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                         user_data = get_data()
                         clan_users_low = {u.get("pubgNickname", "").lower(): u for u in user_data.values() if u.get("pubgNickname")}
                         
+                        # Пошук усіх переможців з клану в цьому матчі
                         for inc in match.get("included", []):
                             if inc["type"] == 'participant':
                                 p_stats = inc.get("attributes", {}).get("stats", {})
@@ -460,16 +461,21 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                                     if n_low in clan_users_low:
                                         u_data = clan_users_low[n_low]
                                         m = f"<@{u_data['userId']}>" if u_data.get('userId') and not u_data.get('isExternal') else f"**{p_stats.get('name')}**"
-                                        mentions.append(m)
-                                        clan_winners.append(f"• {m} — 💀 Вбивств: **{p_stats.get('kills', 0)}** | 🎯 Шкода: **{round(p_stats.get('damageDealt', 0))}**")
+                                        if m not in mentions:
+                                            mentions.append(m)
+                                            clan_winners.append(f"• {m} — 💀 Вбивств: **{p_stats.get('kills', 0)}** | 🎯 Шкода: **{round(p_stats.get('damageDealt', 0))}**")
                         
-                            # Визначаємо режим гри
+                        # --- ЖОРСТКЕ ОБМЕЖЕННЯ ТА НАДСИЛАННЯ СПОВІЩЕННЯ (ПОЗА ЦИКЛОМ) ---
+                        message_sent_for_this_match = False
+                        
+                        if clan_winners and not message_sent_for_this_match:
                             m_attr = match.get("data", {}).get("attributes", {})
                             raw_mode = m_attr.get("gameMode", "squad")
                             
                             # Фільтрація TDM
                             if raw_mode == 'tdm':
                                 create_log(f"[TDM] Пропуск перемоги у TDM для {p_nickname}")
+                                message_sent_for_this_match = True # Позначаємо як оброблене
                             else:
                                 mode_map = {
                                     "squad": "Команди TPP",
@@ -484,19 +490,20 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                                 
                                 is_squad = len(clan_winners) > 1
                                 title = '🍗 ПЕРЕМОГА СКВАДУ!' if is_squad else '🍗 ПЕРЕМОГА!'
+                                match_url = f"https://pubglookup.com/matches/{mid}"
                                 
-                            match_url = f"https://pubglookup.com/matches/{mid}"
-                            embed = discord.Embed(
-                                title=title, 
-                                url=match_url,
-                                description=f"Наші розносять лобі! 🚀\n\n**Режим:** `{nice_mode}`\n**Карта:** `{map_name}`\n\n" + "\n".join(clan_winners), 
-                                color=0xFFCC00
-                            )
-                            embed.add_field(name="🔗 Підтвердження", value=f"[Переглянути деталі на PUBG Lookup]({match_url})", inline=False)
-                            embed.set_footer(text="Офіційні дані PUBG API")
-    
-                            await win_channel.send(content=f"🎉 Вітаємо {' '.join(mentions)}!", embed=embed)
-                            create_log(f"[WIN] Перемога зафіксована для матчу {mid} ({len(clan_winners)} гравців з клану)!")
+                                embed = discord.Embed(
+                                    title=title, 
+                                    url=match_url,
+                                    description=f"Наші розносять лобі! 🚀\n\n**Режим:** `{nice_mode}`\n**Карта:** `{map_name}`\n\n" + "\n".join(clan_winners), 
+                                    color=0xFFCC00
+                                )
+                                embed.add_field(name="🔗 Підтвердження", value=f"[Переглянути деталі на PUBG Lookup]({match_url})", inline=False)
+                                embed.set_footer(text="Офіційні дані PUBG API")
+        
+                                await win_channel.send(content=f"🎉 Вітаємо {' '.join(mentions)}!", embed=embed)
+                                create_log(f"[WIN] Перемога зафіксована для матчу {mid} ({len(clan_winners)} гравців з клану)!")
+                                message_sent_for_this_match = True
                 
                 if p.get("userId"):
                     m_attr = match.get("data", {}).get("attributes", {})
