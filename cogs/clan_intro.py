@@ -64,6 +64,8 @@ class ClanIntroCog(commands.Cog):
 
     async def cog_load(self):
         self.auto_invite_task = self.bot.loop.create_task(self.auto_invite_loop())
+        # Реєструємо постійні View для того, щоб кнопки працювали після перезавантаження
+        self.bot.add_view(StartIntroView(self))
 
     async def cog_unload(self):
         if self.auto_invite_task:
@@ -160,7 +162,7 @@ class ClanIntroCog(commands.Cog):
 
 class SupportButton(discord.ui.Button):
     def __init__(self, bot):
-        super().__init__(label="🆘 Потрібна допомога", style=discord.ButtonStyle.danger, row=4)
+        super().__init__(label="🆘 Потрібна допомога", style=discord.ButtonStyle.danger, row=4, custom_id="support_btn")
         self.bot = bot
 
     async def callback(self, interaction: discord.Interaction):
