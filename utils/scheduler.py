@@ -6,7 +6,7 @@ import json
 import time
 from datetime import datetime, timezone
 
-from .data_handler import get_data, save_data, mark_dirty, get_settings, save_settings
+from .data_handler import get_data, save_data, mark_dirty, get_settings, save_settings, is_match_reported, mark_match_reported
 from .pubg_api import get_player, get_player_season_stats, get_latest_match_date, get_match, get_players_batch
 from .helpers import create_log, ms_to_readable, translate_map, cleanup_old_assets
 from .achievements import check_achievements
@@ -19,6 +19,7 @@ with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
 queue = asyncio.Queue()
 _first_match_scan_done = False
 _queue_worker_started = False
+_scheduler_loops_started = False
 
 async def process_queue():
     global _queue_worker_started
@@ -51,8 +52,13 @@ async def send_log(bot, message):
         await channel.send(f"📋 {message}")
 
 def init_scheduler(client: discord.Client):
+    global _scheduler_loops_started
     if not _queue_worker_started:
         client.loop.create_task(process_queue())
+    
+    if _scheduler_loops_started:
+        return
+    _scheduler_loops_started = True
     
     @tasks.loop(minutes=15)
     async def daily_tasks():
@@ -446,15 +452,8 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                     await debug_channel.send(msg)
 
                 if stats.get("winPlace") == 1:
-                    bot_settings = get_settings()
-                    reported = bot_settings.get("reportedMatches", [])
-                    
-                    if mid not in reported:
-                        reported.append(mid)
-                        if len(reported) > 100:
-                            reported = reported[-100:]
-                        bot_settings["reportedMatches"] = reported
-                        await save_settings()
+                    if not is_match_reported(mid):
+                        mark_match_reported(mid)
                         
                         clan_winners = []
                         mentions = []

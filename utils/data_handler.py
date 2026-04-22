@@ -81,6 +81,12 @@ def init_db():
             type TEXT
         )
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS reported_matches (
+            matchId TEXT PRIMARY KEY,
+            dateReported INTEGER
+        )
+    ''')
     
     # Ініціалізація базової статистики зброї (за офіційними даними наближено для 2-го рівня броні)
     cursor.execute("SELECT count(*) FROM weapons")
@@ -264,6 +270,32 @@ def get_frequent_playmates(user_id):
         print(f"[DataHandler] Error getting frequent playmates: {e}")
         return []
 
+def is_match_reported(match_id):
+    """Перевіряє, чи було вже відправлено сповіщення про цей матч."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM reported_matches WHERE matchId = ?", (match_id,))
+        exists = cursor.fetchone() is not None
+        conn.close()
+        return exists
+    except Exception as e:
+        print(f"[DataHandler] Error checking reported match: {e}")
+        return False
+
+def mark_match_reported(match_id):
+    """Позначає матч як такий, про який вже відправлено сповіщення."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR IGNORE INTO reported_matches (matchId, dateReported) VALUES (?, ?)", 
+                       (match_id, int(time.time() * 1000)))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DataHandler] Error marking match as reported: {e}")
+
 # Викликаємо ініціалізацію при імпорті модуля
+import time
 init_db()
 load_settings()
