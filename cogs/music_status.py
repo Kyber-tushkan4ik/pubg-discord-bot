@@ -28,7 +28,7 @@ class MusicStatusCog(commands.Cog):
     def cog_unload(self):
         self.update_status.cancel()
 
-    @tasks.loop(minutes=15)
+    @tasks.loop(minutes=5)
     async def update_status(self):
         if not self.songs:
             return
