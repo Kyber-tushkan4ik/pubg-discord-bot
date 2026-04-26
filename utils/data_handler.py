@@ -295,6 +295,49 @@ def mark_match_reported(match_id):
     except Exception as e:
         print(f"[DataHandler] Error marking match as reported: {e}")
 
+def get_achievement_stats_sync():
+    """Повертає статистику досягнень: список (userId, count)."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT userId, COUNT(*) as count 
+            FROM achievements 
+            GROUP BY userId 
+            ORDER BY count DESC
+        ''')
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+    except Exception as e:
+        print(f"[DataHandler] Error getting achievement stats: {e}")
+        return []
+
+async def get_achievement_stats():
+    return await asyncio.to_thread(get_achievement_stats_sync)
+
+def clear_achievements_sync(ids_to_delete=None):
+    """
+    Видаляє записи з таблиці досягнень.
+    Якщо ids_to_delete вказано, видаляє лише ці ID.
+    Якщо не вказано — видаляє всі.
+    """
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        if ids_to_delete:
+            placeholders = ', '.join(['?'] * len(ids_to_delete))
+            cursor.execute(f"DELETE FROM achievements WHERE achievementId IN ({placeholders})", ids_to_delete)
+        else:
+            cursor.execute("DELETE FROM achievements")
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DataHandler] Error clearing achievements: {e}")
+
+async def clear_achievements(ids_to_delete=None):
+    await asyncio.to_thread(clear_achievements_sync, ids_to_delete)
+
 # Викликаємо ініціалізацію при імпорті модуля
 import time
 init_db()

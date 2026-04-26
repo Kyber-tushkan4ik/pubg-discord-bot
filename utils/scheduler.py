@@ -6,10 +6,13 @@ import json
 import time
 from datetime import datetime, timezone
 
-from .data_handler import get_data, save_data, mark_dirty, get_settings, save_settings, is_match_reported, mark_match_reported
+from .data_handler import (
+    get_data, save_data, mark_dirty, get_settings, save_settings, 
+    is_match_reported, mark_match_reported, get_achievement_stats, clear_achievements
+)
 from .pubg_api import get_player, get_player_season_stats, get_latest_match_date, get_match, get_players_batch
 from .helpers import create_log, ms_to_readable, translate_map, cleanup_old_assets
-from .achievements import check_achievements
+from .achievements import check_achievements, ACHIEVEMENTS
 from .records import check_records
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../config.json')
@@ -99,16 +102,21 @@ def init_scheduler(client: discord.Client):
             await send_monthly_report(client)
             settings["lastMonthlyReportDate"] = today_str
             
-            # Скидання місячної статистики
+            # Скидання місячної статистики та досягнень
             user_data = get_data()
             for key, p in user_data.items():
                 p["monthlyWins"] = 0
                 p["monthlyKills"] = 0
                 mark_dirty(key)
             await save_data()
+            
+            # Скидаємо лише несекретні досягнення
+            non_secret_ids = [ach["id"] for ach in ACHIEVEMENTS if not ach.get("secret")]
+            await clear_achievements(non_secret_ids)
+            
             settings["lastMonthlyResetDate"] = today_str
             await save_settings()
-            create_log("[SCHEDULER] Місячний звіт надіслано, статистику скинуто.")
+            create_log("[SCHEDULER] Місячний звіт надіслано, статистику та досягнення скинуто.")
             
     @tasks.loop(minutes=60)
     async def hourly_tasks():
@@ -182,7 +190,6 @@ async def send_monthly_report(client):
     create_log('[SCHEDULER] Генерування щомісячного звіту...')
     user_data = get_data()
     players = [p for p in user_data.values() if p.get("pubgNickname") and (p.get("monthlyWins", 0) > 0 or p.get("monthlyKills", 0) > 0)]
-    if not players: return
     
     bot_settings = get_settings()
     report_ch_id = bot_settings.get("reportsChannelId") or CONFIG.get("WEEKLY_REPORT_CHANNEL_ID") or CONFIG.get("LOG_CHANNEL_ID")
@@ -191,25 +198,58 @@ async def send_monthly_report(client):
         try: report_ch = await client.fetch_channel(int(report_ch_id))
         except: return
     
+    if not players: 
+        # Якщо немає статистики за ігри, можливо є досягнення?
+        ach_stats = await get_achievement_stats()
+        if not ach_stats: return
+
     players.sort(key=lambda p: (p.get("monthlyWins", 0), p.get("monthlyKills", 0)), reverse=True)
     
     embed = discord.Embed(
         title='🦖 Наш УАЗік проїхав ще один місяць!',
-        description="Ось список пасажирів-чемпіонів:\n\n",
+        description="Ось список пасажирів-чемпіонів за останній місяць:\n\n",
         color=0x3498DB
     )
     
-    table = "```\n#  Гравець          🏆  💀\n"
-    table += "----------------------------\n"
-    for i, p in enumerate(players[:15]):
-        medal = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else f"{i+1}."
-        nick = p['pubgNickname'][:14].ljust(14)
-        wins = str(p.get("monthlyWins", 0)).rjust(2)
-        kills = str(p.get("monthlyKills", 0)).rjust(3)
-        table += f"{medal.ljust(2)} {nick} {wins} {kills}\n"
-    table += "```"
+    if players:
+        table = "```\n#  Гравець          🏆  💀\n"
+        table += "----------------------------\n"
+        for i, p in enumerate(players[:15]):
+            medal = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else f"{i+1}."
+            nick = p['pubgNickname'][:14].ljust(14)
+            wins = str(p.get("monthlyWins", 0)).rjust(2)
+            kills = str(p.get("monthlyKills", 0)).rjust(3)
+            table += f"{medal.ljust(2)} {nick} {wins} {kills}\n"
+        table += "```"
+        embed.add_field(name="📊 Статистика виживання", value=table, inline=False)
     
-    embed.description += table
+    # Додаємо рейтинг досягнень
+    ach_stats = await get_achievement_stats()
+    if ach_stats:
+        ach_table = "```\n#  Гравець          🏆 Досягнень\n"
+        ach_table += "------------------------------\n"
+        count_shown = 0
+        for i, (u_id, count) in enumerate(ach_stats):
+            # Пошук нікнейму за userId
+            nickname = "Unknown"
+            for p in user_data.values():
+                if p.get("userId") == str(u_id):
+                    nickname = p.get("pubgNickname", "Unknown")
+                    break
+            
+            if nickname == "Unknown": continue # Пропускаємо якщо не знайшли (можливо старі дані)
+            
+            medal = "🥇" if count_shown == 0 else "🥈" if count_shown == 1 else "🥉" if count_shown == 2 else f"{count_shown+1}."
+            nick = nickname[:14].ljust(14)
+            val = str(count).rjust(2)
+            ach_table += f"{medal.ljust(2)} {nick} {val}\n"
+            count_shown += 1
+            if count_shown >= 10: break
+        
+        ach_table += "```"
+        if count_shown > 0:
+            embed.add_field(name="🌟 Топ за досягненнями", value=ach_table, inline=False)
+    
     embed.set_footer(text=f"Підсумки за {time.strftime('%B %Y')}")
     await report_ch.send(embed=embed)
 
