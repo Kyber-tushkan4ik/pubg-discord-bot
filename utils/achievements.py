@@ -84,10 +84,14 @@ ACHIEVEMENTS = [
         "secret": False
     },
     {
-        "id": 'lobby_king',
-        "name": '👑 Володар лобі',
-        "description": 'Посісти 1-е місце за кількістю вбивств у матчі (killPlace 1).',
         "condition": lambda stats, *args: stats.get('killPlace', 100) == 1,
+        "secret": False
+    },
+    {
+        "id": 'dbno_master',
+        "name": '🩸 Майстер нокаутів',
+        "description": 'Покласти на коліна (нокаутувати) 5 або більше ворогів за один матч.',
+        "condition": lambda stats, *args: stats.get('DBNOs', 0) >= 5,
         "secret": False
     },
     
@@ -156,13 +160,15 @@ ACHIEVEMENTS = [
         "secret": True
     },
     {
-        "id": 'tushkanchik',
-        "name": '🐰 Тушканчік',
-        "description": 'Зробити 50 або більше вбивств у режимі TDM за один матч.',
-        "condition": lambda stats, mode=None, *args: mode == 'tdm' and stats.get('kills', 0) >= 50,
-        "secret": True,
         "super_secret": True, # Не показувати опис та умову взагалі
         "role_reward": "Тушканчік"
+    },
+    {
+        "id": 'ninja',
+        "name": '🥷 Ніндзя',
+        "description": 'Посісти Топ-10, не завдавши ЖОДНОЇ одиниці шкоди за весь матч.',
+        "condition": lambda stats, *args: stats.get('winPlace', 100) <= 10 and stats.get('damageDealt', 0) == 0,
+        "secret": True
     }
 ]
 
