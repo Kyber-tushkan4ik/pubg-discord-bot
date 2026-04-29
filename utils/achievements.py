@@ -204,6 +204,8 @@ async def check_achievements(client: discord.Client, user_id: str, pubg_nickname
             target_channel_id = channel_id or get_settings().get("reportsChannelId") or CONFIG.get("WIN_NOTIF_CHANNEL_ID")
             channel = client.get_channel(int(target_channel_id)) if target_channel_id else None
             
+            embeds_to_send = []
+            
             for ach in new_achievements:
                 # Обробка ролі за виграш (нагорода)
                 if ach.get("role_reward"):
@@ -267,8 +269,11 @@ async def check_achievements(client: discord.Client, user_id: str, pubg_nickname
                     else:
                         embed.set_footer(text="Умова отримання залишається в таємниці...")
                         
-                    await channel.send(embed=embed)
-                    await asyncio.sleep(2.0)
+                    embeds_to_send.append(embed)
+            
+            if channel and embeds_to_send:
+                for i in range(0, len(embeds_to_send), 10):
+                    await channel.send(embeds=embeds_to_send[i:i+10])
                     
     except Exception as e:
         print(f"Помилка перевірки досягнень: {e}")

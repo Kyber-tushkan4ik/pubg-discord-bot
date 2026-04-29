@@ -355,6 +355,17 @@ async def check_special_roles(bot, guild, member, stats, nickname, debug_channel
         granted_str = ", ".join([f"`{r}`" for r in granted_roles])
         await send_log(bot, f"🏆 Гравцю **{nickname}** видано ролі: {granted_str}")
         if debug_channel: await debug_channel.send(f"🎖️ **Видано спецролі**: {granted_str}")
+        
+        bot_settings = get_settings()
+        rep_ch_id = bot_settings.get("reportsChannelId") or CONFIG.get("WIN_NOTIF_CHANNEL_ID")
+        rep_ch = bot.get_channel(int(rep_ch_id)) if rep_ch_id else None
+        if rep_ch:
+            embed = discord.Embed(
+                title="🏆 Нові Спеціальні Ролі!",
+                description=f"Гравець **{nickname}** заслужив нові ролі: {granted_str}",
+                color=0xf1c40f
+            )
+            await rep_ch.send(embed=embed)
             
     # Автоматичне видалення старих (замінених) ролей
     deprecated = {
@@ -683,6 +694,17 @@ async def process_single_player_stats_and_ranks(bot, key, p, pubg_data, debug_ch
             await member.add_roles(role_obj)
             create_log(f"[RANK] {p_nickname} -> {target_role_name}")
             if debug_channel: await debug_channel.send(f"🎖️ **Оновлено ранг**: {target_role_name}")
+            
+            bot_settings = get_settings()
+            rep_ch_id = bot_settings.get("reportsChannelId") or CONFIG.get("WIN_NOTIF_CHANNEL_ID")
+            rep_ch = bot.get_channel(int(rep_ch_id)) if rep_ch_id else None
+            if rep_ch:
+                embed = discord.Embed(
+                    title="🎖️ Новий Ранг!",
+                    description=f"Гравець **{p_nickname}** отримав новий ранг: **{target_role_name}**!\nK/D: **{kd}**",
+                    color=discord.Color(int(target_color, 16))
+                )
+                await rep_ch.send(embed=embed)
         else:
             if debug_channel: await debug_channel.send(f"🎖️ Ранг вже актуальний: {target_role_name}")
 
