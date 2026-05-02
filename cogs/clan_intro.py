@@ -363,7 +363,7 @@ class RoleView(discord.ui.View):
                 
             except Exception as e:
                 print(f"Error giving role: {e}")
-                await interaction.followup.send(f"❌ Не вдалося видати роль. Перевірте мої права (Manage Roles).", ephemeral=True)
+                await interaction.followup.send(f"❌ Не вдалося видати роль. Помилка: `{e}`. Перевірте мої права або ієрархію.", ephemeral=True)
                 
         return callback
 
