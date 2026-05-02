@@ -21,16 +21,20 @@ async def send_log(client, message):
             print(f"Помилка лог-каналу: {e}")
 
 async def handle_success(member):
-    # Якщо передано User (наприклад, з DM), намагаємося знайти його на сервері
     guild = getattr(member, 'guild', None)
     if not guild:
-        # Шукаємо сервер, де є роль адаптації з конфігу серед усіх серверів бота
-        for g in member.client.guilds:
-            if discord.utils.get(g.roles, name=CONFIG.get("ROLE_ADAPT")):
-                guild = g
-                # Оновлюємо member до об'єкта Member цього сервера
-                member = g.get_member(member.id) or await g.fetch_member(member.id)
-                break
+        # Шукаємо сервер, де є роль адаптації
+        # Беремо client через внутрішній атрибут або ігноруємо, якщо немає доступу
+        client = getattr(member, '_state', getattr(member, '_client', None))
+        if client and hasattr(client, '_get_client'):
+            client = client._get_client()
+            
+        if client and hasattr(client, 'guilds'):
+            for g in client.guilds:
+                if discord.utils.get(g.roles, name=CONFIG.get("ROLE_ADAPT")):
+                    guild = g
+                    member = g.get_member(member.id) or await g.fetch_member(member.id)
+                    break
     
     if not guild or not hasattr(member, 'roles'):
         create_log(f"[ERROR] Could not find guild context or member roles for {member}")
@@ -74,8 +78,14 @@ async def handle_success(member):
         except Exception as dm_err:
             create_log(f"[DM FAILED] User {member.name} has DMs closed: {dm_err}")
 
-        client = member.client if hasattr(member, 'client') else guild.me.client
-        await send_log(client, f"✅ Користувач **{member.mention}** успішно пройшов ознайомлення та приєднався до клану!")
+        client_instance = getattr(member, '_state', None)
+        if client_instance and hasattr(client_instance, '_get_client'):
+            client_instance = client_instance._get_client()
+        elif guild and hasattr(guild, 'me') and hasattr(guild.me, '_state'):
+            client_instance = guild.me._state._get_client()
+            
+        if client_instance:
+            await send_log(client_instance, f"✅ Користувач **{member.mention}** успішно пройшов ознайомлення та приєднався до клану!")
     except Exception as e:
         create_log(f"[ERROR] handle_success: {e}")
         print(f"Error in handle_success: {e}")

@@ -173,7 +173,7 @@ ACHIEVEMENTS = [
 ]
 
 async def check_achievements(client: discord.Client, user_id: str, pubg_nickname: str, stats: dict, channel_id: str = None, game_mode: str = None):
-    unlocked = [ach for ach in ACHIEVEMENTS if ach["condition"](stats, game_mode)]
+    unlocked = [ach for ach in ACHIEVEMENTS if "condition" in ach and ach["condition"](stats, game_mode)]
     if not unlocked:
         return
 

@@ -10,7 +10,7 @@ import asyncio
 
 from datetime import datetime, timedelta
 from utils.data_handler import get_data, get_settings
-from utils.pubg_api import get_player, get_player_season_stats, get_matches, get_latest_match_date
+from utils.pubg_api import get_player, get_player_season_stats, get_matches, get_latest_match_date, get_match
 from utils.helpers import find_record, translate_map
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../config.json')
@@ -86,7 +86,12 @@ class PubgCog(commands.Cog):
                 
         if not nickname:
             user_data = get_data()
-            record = find_record(user_data, user_id, str(interaction.guild.id))
+            guild_id = str(interaction.guild.id) if interaction.guild else ""
+            record = find_record(user_data, user_id, guild_id)
+            if not record:
+                # Якщо команда викликана в ПП, шукаємо просто по userId
+                record = next((v for v in user_data.values() if v.get("userId") == user_id), None)
+            
             if record and record.get("pubgNickname"):
                 nickname = record.get("pubgNickname")
             else:
