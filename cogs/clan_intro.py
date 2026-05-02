@@ -186,6 +186,20 @@ class StartIntroView(discord.ui.View):
         user_id = interaction.user.id
         # Обираємо 2 випадкових питання з пулу
         random_questions = random.sample(QUIZ_POOL, 2)
+        
+        guild_id = interaction.guild_id or self.cog.intro_sessions.get(user_id, {}).get("guild_id")
+        if not guild_id:
+            from utils.data_handler import get_data
+            user_data = get_data()
+            record = next((v for v in user_data.values() if v.get("userId") == str(user_id) and v.get("guildId")), None)
+            if record:
+                guild_id = record["guildId"]
+            else:
+                for g in self.cog.bot.guilds:
+                    if g.get_member(user_id):
+                        guild_id = g.id
+                        break
+
         self.cog.intro_sessions[user_id] = {
             "step": 1, 
             "questions": random_questions,
@@ -193,7 +207,7 @@ class StartIntroView(discord.ui.View):
             "role": None, 
             "voice_done": False, 
             "cmd_done": False,
-            "guild_id": interaction.guild_id or (self.cog.intro_sessions.get(user_id, {}).get("guild_id"))
+            "guild_id": guild_id
         }
         await self.send_step(interaction, 1)
 
