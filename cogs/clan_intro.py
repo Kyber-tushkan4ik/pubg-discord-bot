@@ -409,11 +409,25 @@ class FinalView(discord.ui.View):
         guild_id = session.get("guild_id") if session else None
         
         guild = self.cog.bot.get_guild(int(guild_id)) if guild_id else None
+        
+        if not guild:
+            # Якщо сесія загубилась після рестарту, шукаємо сервер, де є цей учасник
+            for g in self.cog.bot.guilds:
+                if g.get_member(user_id):
+                    guild = g
+                    break
+
         member = guild.get_member(user_id) if guild else None
         
+        if not member and guild:
+            try:
+                member = await guild.fetch_member(user_id)
+            except:
+                pass
+
         if not member:
-            # Спробуємо використати interaction.user, але handle_success очікує Member
-            member = interaction.user 
+            await interaction.response.send_message("❌ Не вдалося знайти вас на сервері. Зверніться до адміністратора.", ephemeral=True)
+            return 
 
         await self.cog.finish_intro(member)
         await interaction.response.edit_message(content="🎉 Вітаємо! Ви тепер повноправний учасник клану. Канали відкрито!", embed=None, view=None)
