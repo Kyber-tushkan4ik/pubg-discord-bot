@@ -161,16 +161,17 @@ class ClanIntroCog(commands.Cog):
         await handle_success(member)
 
 class SupportButton(discord.ui.Button):
-    def __init__(self, bot):
-        super().__init__(label="🆘 Потрібна допомога", style=discord.ButtonStyle.danger, row=4, custom_id="support_btn")
+    def __init__(self, bot, step_info="Головне меню", custom_id="support_btn"):
+        super().__init__(label="🆘 Потрібна допомога", style=discord.ButtonStyle.danger, row=4, custom_id=custom_id)
         self.bot = bot
+        self.step_info = step_info
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_message("✅ Ваше звернення надіслано адміністратору. Зачекайте, вам напишуть.", ephemeral=True)
         try:
             admin = await self.bot.fetch_user(776154533742641174)
             if admin:
-                await admin.send(f"⚠️ **Увага!** Користувач {interaction.user.mention} (`{interaction.user.id}`) зіткнувся з проблемою під час адаптації та просить допомоги. Можливо йому варто завершити адаптацію вручну через команду `/adapt_finish`.")
+                await admin.send(f"⚠️ **Увага!** Користувач {interaction.user.mention} (`{interaction.user.id}`) зіткнувся з проблемою під час адаптації на етапі **{self.step_info}** та просить допомоги. Можливо йому варто завершити адаптацію вручну через команду `/adapt_finish`.")
         except Exception as e:
             print(f"Failed to send support message: {e}")
 
@@ -178,7 +179,7 @@ class StartIntroView(discord.ui.View):
     def __init__(self, cog):
         super().__init__(timeout=None)
         self.cog = cog
-        self.add_item(SupportButton(self.cog.bot))
+        self.add_item(SupportButton(self.cog.bot, step_info="Головне меню", custom_id="support_btn"))
 
     @discord.ui.button(label="🚀 Почати ознайомлення", style=discord.ButtonStyle.success, custom_id="start_intro")
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -273,7 +274,10 @@ class QuizView(discord.ui.View):
         super().__init__(timeout=120)
         self.cog = cog
         self.step = step
-        self.add_item(SupportButton(self.cog.bot))
+        
+        step_names = {1: "Крок 1 (Правила)", 2: "Крок 2 (Питання 1)", 25: "Крок 2 (Питання 2)"}
+        step_name = step_names.get(step, f"Крок {step}")
+        self.add_item(SupportButton(self.cog.bot, step_info=step_name, custom_id=None))
         
         if step in [2, 25] and q_data:
             options = [
@@ -312,7 +316,7 @@ class RoleView(discord.ui.View):
     def __init__(self, cog, step):
         super().__init__(timeout=120)
         self.cog = cog
-        self.add_item(SupportButton(self.cog.bot))
+        self.add_item(SupportButton(self.cog.bot, step_info="Крок 3 (Вибір ролі)", custom_id=None))
         for role_name in ROLES:
             btn = discord.ui.Button(label=role_name, style=discord.ButtonStyle.secondary)
             btn.callback = self.make_callback(role_name)
@@ -367,7 +371,7 @@ class CheckTaskView(discord.ui.View):
     def __init__(self, cog, step):
         super().__init__(timeout=300)
         self.cog = cog
-        self.add_item(SupportButton(self.cog.bot))
+        self.add_item(SupportButton(self.cog.bot, step_info="Крок 4 (Голосовий зв'язок)", custom_id=None))
 
     @discord.ui.button(label="🔄 Перевірити виконання", style=discord.ButtonStyle.primary)
     async def check(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -396,7 +400,7 @@ class FinalView(discord.ui.View):
     def __init__(self, cog, step):
         super().__init__(timeout=None)
         self.cog = cog
-        self.add_item(SupportButton(self.cog.bot))
+        self.add_item(SupportButton(self.cog.bot, step_info="Фінал (Завершення)", custom_id=None))
 
     @discord.ui.button(label="✅ Завершити та приєднатися", style=discord.ButtonStyle.success)
     async def finish(self, interaction: discord.Interaction, button: discord.ui.Button):
