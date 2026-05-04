@@ -4,6 +4,7 @@ from discord.ext import commands
 import json
 import os
 import time
+import asyncio
 from utils.data_handler import get_data, get_settings, get_frequent_playmates
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../config.json')
@@ -107,11 +108,12 @@ class LfgPanel(discord.ui.View):
             
         await interaction.response.defer(ephemeral=True)
         invited_count = 0
-        for user_id in self.select_menu.values:
+        for user_id in self.select_menu.values[:15]:  # Обмеження щоб уникнути бану API
             target = interaction.guild.get_member(int(user_id))
             if target:
                 success = await self.send_invitation(target, interaction.channel)
                 if success: invited_count += 1
+                await asyncio.sleep(1.5)  # Затримка проти rate limit 429
                 
         await interaction.followup.send(f"✅ Надіслано запрошення {invited_count} гравцям.", ephemeral=True)
 
@@ -122,9 +124,10 @@ class LfgPanel(discord.ui.View):
             
         await interaction.response.defer(ephemeral=True)
         invited_count = 0
-        for target in self.players_playing:
+        for target in self.players_playing[:15]:  # Максимум 15 людей
             success = await self.send_invitation(target, interaction.channel)
             if success: invited_count += 1
+            await asyncio.sleep(1.5)
             
         await interaction.followup.send(f"✅ Надіслано запрошення {invited_count} гравцям, що грають в PUBG.", ephemeral=True)
 
@@ -135,9 +138,10 @@ class LfgPanel(discord.ui.View):
 
         await interaction.response.defer(ephemeral=True)
         invited_count = 0
-        for target in self.players_online:
+        for target in self.players_online[:15]:  # Максимум 15 людей
             success = await self.send_invitation(target, interaction.channel)
             if success: invited_count += 1
+            await asyncio.sleep(1.5)
             
         await interaction.followup.send(f"✅ Надіслано запрошення {invited_count} гравцям онлайн.", ephemeral=True)
 
