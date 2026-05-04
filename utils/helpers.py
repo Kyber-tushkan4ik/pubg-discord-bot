@@ -5,6 +5,8 @@ import discord
 import logging
 from logging.handlers import RotatingFileHandler
 import time
+import asyncio
+import traceback
 from discord import app_commands
 from datetime import datetime, timedelta
 
@@ -94,3 +96,49 @@ def translate_map(map_id: str) -> str:
         return "PUBG"
     maps = CONFIG.get("MAP_NAMES", {})
     return maps.get(map_id, map_id)
+
+_error_cooldowns = {}
+
+async def notify_admin_error(bot, context: str, exception: Exception):
+    """Надсилає повідомлення про помилку власнику бота (або вказаному адміну)."""
+    now = time.time()
+    error_str = str(exception)
+    
+    # Запобігаємо спаму (1 раз на 10 хвилин для однакових помилок)
+    err_hash = f"{context}-{type(exception).__name__}"
+    if err_hash in _error_cooldowns and now - _error_cooldowns[err_hash] < 600:
+        return
+    _error_cooldowns[err_hash] = now
+
+    try:
+        app_info = await bot.application_info()
+        owner = app_info.owner
+        
+        # Аналіз помилки для підказок
+        hint = ""
+        color = 0xFF0000
+        if "No space left on device" in error_str or "database or disk is full" in error_str:
+            hint = "🚨 **Критична помилка:** На сервері закінчилося місце! Негайно звільніть пам'ять або збільште тариф."
+            color = 0x8B0000
+        elif "429 Too Many Requests" in error_str:
+            hint = "🚨 **Блокування API:** Бот надсилає занадто багато запитів (спам). Discord заблокував IP. Зменште швидкість розсилок."
+            color = 0xFF8C00
+        elif "OperationalError" in str(type(exception)):
+            hint = "⚠️ **Помилка бази даних:** Проблема зі збереженням чи читанням (можливо, блокування файлу)."
+            
+        tb = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+        # Обрізаємо занадто довгий traceback
+        if len(tb) > 1000:
+            tb = tb[-1000:]
+            
+        embed = discord.Embed(
+            title=f"⚠️ Збій системи: {context}",
+            description=f"**Помилка:** `{type(exception).__name__}: {exception}`\n\n{hint}",
+            color=color
+        )
+        embed.add_field(name="Стек викликів", value=f"```python\n{tb}\n```", inline=False)
+        embed.set_footer(text=f"Час збою: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        await owner.send(embed=embed)
+    except Exception as e:
+        create_log(f"[FATAL ERROR] Не вдалося надіслати сповіщення власнику: {e}")

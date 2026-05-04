@@ -11,6 +11,7 @@ user_data = {}
 bot_settings = {"ytmSource": None}
 _is_saving = False
 _dirty_keys = set()
+_error_callback = None
 
 def init_db():
     global user_data
@@ -197,6 +198,8 @@ def save_data_sync():
         conn.close()
     except Exception as e:
         print(f"DB Save Failed: {e}")
+        if _error_callback:
+            _error_callback("Збереження бази даних (SQLite)", e)
     finally:
         _is_saving = False
 

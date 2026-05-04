@@ -10,7 +10,7 @@ class Maintenance(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="maintenance", description="Обслуговування бота та перевірка ресурсів")
-    @app_commands.describe(action="Дія: status (статус), cleanup (очищення)")
+    @app_commands.describe(action="Дія: status (статус), cleanup (очищення), test_error (тест помилок)")
     @is_admin()
     async def maintenance(self, interaction: discord.Interaction, action: str):
         if action == "status":
@@ -61,8 +61,16 @@ class Maintenance(commands.Cog):
             cleanup_old_assets(max_age_hours=0) # Видалити ВСІ тимчасові victory_*.png
             create_log(f"[ADMIN] {interaction.user} запустив ручне очищення.")
             await interaction.followup.send("✅ Очищення завершено. Тимчасові зображення перемог видалено.")
+        elif action == "test_error":
+            await interaction.response.send_message("🚨 Симулюю критичну помилку бази даних...", ephemeral=True)
+            # Викликаємо глобальний обробник нібито виникла помилка
+            import sqlite3
+            fake_err = sqlite3.OperationalError("database or disk is full")
+            import utils.data_handler as dh
+            if dh._error_callback:
+                dh._error_callback("Тестовий запит", fake_err)
         else:
-            await interaction.response.send_message("❌ Невідома дія. Використовуйте `status` або `cleanup`.", ephemeral=True)
+            await interaction.response.send_message("❌ Невідома дія. Використовуйте `status`, `cleanup` або `test_error`.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(Maintenance(bot))

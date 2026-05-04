@@ -6,6 +6,8 @@ import asyncio
 from dotenv import load_dotenv
 from utils.core import perform_startup_scan
 from utils.scheduler import init_scheduler
+from utils.helpers import notify_admin_error
+import utils.data_handler as data_handler
 
 # Завантажуємо .env з поточної або батьківської папки
 if os.path.exists('.env'):
@@ -30,6 +32,12 @@ class PubgBot(commands.Bot):
         )
         self.is_initialized = False
 
+        # Прив'язуємо колбек з бази даних
+        data_handler._error_callback = self.db_error_handler
+
+    def db_error_handler(self, context, exception):
+        asyncio.run_coroutine_threadsafe(notify_admin_error(self, context, exception), self.loop)
+
     async def global_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         if isinstance(error, app_commands.CheckFailure):
             try:
@@ -42,11 +50,12 @@ class PubgBot(commands.Bot):
         else:
             cmd_name = interaction.command.name if interaction.command else 'Unknown'
             print(f"[ПОМИЛКА КОМАНДИ] {cmd_name}: {error}")
+            self.loop.create_task(notify_admin_error(self, f"Команда /{cmd_name}", error))
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ Сталася помилка при виконанні команди.", ephemeral=True)
+                    await interaction.response.send_message("❌ Сталася помилка при виконанні команди. Адміністратор вже повідомлений.", ephemeral=True)
                 else:
-                    await interaction.followup.send("❌ Сталася помилка при виконанні команди.", ephemeral=True)
+                    await interaction.followup.send("❌ Сталася помилка при виконанні команди. Адміністратор вже повідомлений.", ephemeral=True)
             except Exception:
                 pass
 
@@ -63,6 +72,14 @@ class PubgBot(commands.Bot):
                 print(f'Завантажено розширення: {filename}')
 
 bot = PubgBot()
+
+@bot.event
+async def on_error(event, *args, **kwargs):
+    import sys
+    exc_type, exc_value, exc_traceback = sys.exc_info()
+    if exc_value:
+        print(f"[ГЛОБАЛЬНА ПОМИЛКА] в івенті {event}: {exc_value}")
+        await notify_admin_error(bot, f"Фоновий процес ({event})", exc_value)
 
 @bot.event
 async def on_ready():
