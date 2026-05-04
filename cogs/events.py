@@ -59,6 +59,15 @@ class EventsCog(commands.Cog):
             except: pass
             await message.channel.send(f"{message.author.mention}, ваші повідомлення містять заборонені слова.", delete_after=5)
             return
+
+        # Фільтр російської мови
+        ru_pattern = re.compile(r'[ыэъёЫЭЪЁ]')
+        if ru_pattern.search(content):
+            try: await message.delete()
+            except: pass
+            await message.channel.send(f"⚠️ {message.author.mention}, будь ласка, спілкуйтеся українською мовою.", delete_after=10)
+            create_log(f"[LANGUAGE FILTER] Видалено повідомлення від {message.author.name}: містить російські літери.")
+            return
             
         url_regex = re.compile(r'(https?://[^\s]+|discord\.gg/[^\s]+|www\.[^\s]+)', re.IGNORECASE)
         is_allowed_channel = str(message.channel.id) in CONFIG.get("ALLOWED_LINK_CHANNELS", [])
