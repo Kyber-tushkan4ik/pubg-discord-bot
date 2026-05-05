@@ -88,7 +88,21 @@ def init_db():
             dateReported INTEGER
         )
     ''')
-    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS economy (
+            userId TEXT PRIMARY KEY,
+            balance INTEGER DEFAULT 0
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS activity_stats (
+            userId TEXT PRIMARY KEY,
+            weeklyMessages INTEGER DEFAULT 0,
+            totalMessages INTEGER DEFAULT 0,
+            weeklyVoiceTime INTEGER DEFAULT 0
+        )
+    ''')
+
     # Ініціалізація базової статистики зброї (за офіційними даними наближено для 2-го рівня броні)
     cursor.execute("SELECT count(*) FROM weapons")
     if cursor.fetchone()[0] == 0:
@@ -340,6 +354,90 @@ def clear_achievements_sync(ids_to_delete=None):
 
 async def clear_achievements(ids_to_delete=None):
     await asyncio.to_thread(clear_achievements_sync, ids_to_delete)
+
+# --- Economy & Activity Stats ---
+def get_balance(user_id):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT balance FROM economy WHERE userId = ?", (str(user_id),))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else 0
+    except Exception as e:
+        print(f"[DataHandler] Error getting balance: {e}")
+        return 0
+
+def add_balance(user_id, amount):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO economy (userId, balance) 
+            VALUES (?, ?) 
+            ON CONFLICT(userId) DO UPDATE SET balance = balance + ?
+        ''', (str(user_id), amount, amount))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DataHandler] Error adding balance: {e}")
+
+def add_message_stat(user_id):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO activity_stats (userId, weeklyMessages, totalMessages, weeklyVoiceTime) 
+            VALUES (?, 1, 1, 0) 
+            ON CONFLICT(userId) DO UPDATE SET 
+                weeklyMessages = weeklyMessages + 1,
+                totalMessages = totalMessages + 1
+        ''', (str(user_id),))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DataHandler] Error adding message stat: {e}")
+
+def add_weekly_voice_stat(user_id, duration_ms):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO activity_stats (userId, weeklyMessages, totalMessages, weeklyVoiceTime) 
+            VALUES (?, 0, 0, ?) 
+            ON CONFLICT(userId) DO UPDATE SET 
+                weeklyVoiceTime = weeklyVoiceTime + ?
+        ''', (str(user_id), duration_ms, duration_ms))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DataHandler] Error adding voice stat: {e}")
+
+def reset_weekly_activity():
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE activity_stats SET weeklyMessages = 0, weeklyVoiceTime = 0")
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DataHandler] Error resetting weekly activity: {e}")
+
+def get_top_activity():
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT userId, weeklyMessages, weeklyVoiceTime 
+            FROM activity_stats 
+            WHERE weeklyMessages > 0 OR weeklyVoiceTime > 0
+        ''')
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+    except Exception as e:
+        print(f"[DataHandler] Error getting top activity: {e}")
+        return []
 
 # Викликаємо ініціалізацію при імпорті модуля
 import time

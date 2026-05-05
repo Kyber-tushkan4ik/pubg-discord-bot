@@ -6,7 +6,7 @@ import json
 import re
 import sqlite3
 
-from utils.data_handler import get_data, save_data, get_settings, increment_playmate_relation
+from utils.data_handler import get_data, save_data, get_settings, increment_playmate_relation, add_balance, add_weekly_voice_stat
 from utils.core import handle_success, send_log
 from utils.helpers import create_log, ms_to_readable, get_record_key, find_record
 
@@ -165,13 +165,18 @@ class EventsCog(commands.Cog):
                         if other_joined and (now - other_joined) > 600000:
                             increment_playmate_relation(member.id, other.id)
                 
-                # Статистика totalTime
                 try:
                     conn = sqlite3.connect(DB_FILE)
                     conn.execute("UPDATE voice_stats SET totalTime = totalTime + ? WHERE userId = ?", (duration, user_id))
                     conn.commit()
                     conn.close()
                 except: pass
+                
+                # Додаємо тижневу статистику та BP
+                add_weekly_voice_stat(user_id, duration)
+                bp_earned = int(duration // 60000) # 1 BP за кожну хвилину
+                if bp_earned > 0:
+                    add_balance(user_id, bp_earned)
                 
                 if duration > 3600000:
                     create_log(f"[VOICE] {member.name} spent {(duration/3600000):.1f}h in voice.")
