@@ -208,11 +208,14 @@ class PubgCog(commands.Cog):
             await interaction.response.send_message("⭕ Відстеження активності клану наразі ВИМКНЕНО.", ephemeral=True)
             return
 
-        await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        if not guild:
+            await interaction.response.send_message("❌ Цю команду можна використовувати лише на сервері клану.", ephemeral=True)
+            return
         
+        await interaction.response.defer(ephemeral=True)
         now = int(time.time() * 1000)
         user_data = get_data()
-        guild = interaction.guild
         
         clan_role = discord.utils.get(guild.roles, name=CONFIG.get("ROLE_SUCCESS"))
         if not clan_role:
