@@ -166,20 +166,8 @@ def get_data():
 def get_settings():
     return bot_settings
 
-def save_data_sync():
-    global _is_saving, _dirty_keys
-    if _is_saving or not _dirty_keys:
-        return
-    _is_saving = True
-    
-    # Снепшот тільки змінених ключів
-    to_save = {k: user_data[k] for k in list(_dirty_keys) if k in user_data}
-    _dirty_keys.clear()
-    
-    if not to_save:
-        _is_saving = False
-        return
-        
+def save_data_sync(to_save):
+    if not to_save: return
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -214,12 +202,25 @@ def save_data_sync():
         print(f"DB Save Failed: {e}")
         if _error_callback:
             _error_callback("Збереження бази даних (SQLite)", e)
-    finally:
-        _is_saving = False
 
 async def save_data():
-    # Асинхронна абстракція над синхронним збереженням
-    await asyncio.to_thread(save_data_sync)
+    global _is_saving, _dirty_keys
+    if _is_saving or not _dirty_keys:
+        return
+    _is_saving = True
+    
+    # Снепшот тільки змінених ключів (виконується в async loop)
+    to_save = {k: user_data[k].copy() for k in list(_dirty_keys) if k in user_data}
+    _dirty_keys.clear()
+    
+    if not to_save:
+        _is_saving = False
+        return
+        
+    try:
+        await asyncio.to_thread(save_data_sync, to_save)
+    finally:
+        _is_saving = False
 
 def save_settings_sync():
     try:
@@ -248,7 +249,7 @@ def delete_data_sync(key):
 async def delete_data(key):
     await asyncio.to_thread(delete_data_sync, key)
 
-def increment_playmate_relation(u1, u2):
+def increment_playmate_relation_sync(u1, u2):
     """Збільшує лічильник спільних ігор для двох користувачів."""
     try:
         ids = sorted([str(u1), str(u2)])
@@ -264,7 +265,10 @@ def increment_playmate_relation(u1, u2):
     except Exception as e:
         print(f"[DataHandler] Error incrementing playmate relation: {e}")
 
-def get_frequent_playmates(user_id):
+async def increment_playmate_relation(u1, u2):
+    await asyncio.to_thread(increment_playmate_relation_sync, u1, u2)
+
+def get_frequent_playmates_sync(user_id):
     """Повертає список ID користувачів, з якими даний юзер грав найчастіше."""
     try:
         u_id = str(user_id)
@@ -287,7 +291,10 @@ def get_frequent_playmates(user_id):
         print(f"[DataHandler] Error getting frequent playmates: {e}")
         return []
 
-def is_match_reported(match_id):
+async def get_frequent_playmates(user_id):
+    return await asyncio.to_thread(get_frequent_playmates_sync, user_id)
+
+def is_match_reported_sync(match_id):
     """Перевіряє, чи було вже відправлено сповіщення про цей матч."""
     try:
         conn = sqlite3.connect(DB_FILE)
@@ -300,7 +307,10 @@ def is_match_reported(match_id):
         print(f"[DataHandler] Error checking reported match: {e}")
         return False
 
-def mark_match_reported(match_id):
+async def is_match_reported(match_id):
+    return await asyncio.to_thread(is_match_reported_sync, match_id)
+
+def mark_match_reported_sync(match_id):
     """Позначає матч як такий, про який вже відправлено сповіщення."""
     try:
         conn = sqlite3.connect(DB_FILE)
@@ -311,6 +321,9 @@ def mark_match_reported(match_id):
         conn.close()
     except Exception as e:
         print(f"[DataHandler] Error marking match as reported: {e}")
+
+async def mark_match_reported(match_id):
+    await asyncio.to_thread(mark_match_reported_sync, match_id)
 
 def get_achievement_stats_sync():
     """Повертає статистику досягнень: список (userId, count)."""
@@ -356,7 +369,7 @@ async def clear_achievements(ids_to_delete=None):
     await asyncio.to_thread(clear_achievements_sync, ids_to_delete)
 
 # --- Economy & Activity Stats ---
-def get_balance(user_id):
+def get_balance_sync(user_id):
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -368,7 +381,10 @@ def get_balance(user_id):
         print(f"[DataHandler] Error getting balance: {e}")
         return 0
 
-def add_balance(user_id, amount):
+async def get_balance(user_id):
+    return await asyncio.to_thread(get_balance_sync, user_id)
+
+def add_balance_sync(user_id, amount):
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -382,7 +398,10 @@ def add_balance(user_id, amount):
     except Exception as e:
         print(f"[DataHandler] Error adding balance: {e}")
 
-def add_message_stat(user_id):
+async def add_balance(user_id, amount):
+    await asyncio.to_thread(add_balance_sync, user_id, amount)
+
+def add_message_stat_sync(user_id):
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -398,7 +417,10 @@ def add_message_stat(user_id):
     except Exception as e:
         print(f"[DataHandler] Error adding message stat: {e}")
 
-def add_weekly_voice_stat(user_id, duration_ms):
+async def add_message_stat(user_id):
+    await asyncio.to_thread(add_message_stat_sync, user_id)
+
+def add_weekly_voice_stat_sync(user_id, duration_ms):
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -413,7 +435,10 @@ def add_weekly_voice_stat(user_id, duration_ms):
     except Exception as e:
         print(f"[DataHandler] Error adding voice stat: {e}")
 
-def reset_weekly_activity():
+async def add_weekly_voice_stat(user_id, duration_ms):
+    await asyncio.to_thread(add_weekly_voice_stat_sync, user_id, duration_ms)
+
+def reset_weekly_activity_sync():
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -423,7 +448,10 @@ def reset_weekly_activity():
     except Exception as e:
         print(f"[DataHandler] Error resetting weekly activity: {e}")
 
-def get_top_activity():
+async def reset_weekly_activity():
+    await asyncio.to_thread(reset_weekly_activity_sync)
+
+def get_top_activity_sync():
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -438,6 +466,9 @@ def get_top_activity():
     except Exception as e:
         print(f"[DataHandler] Error getting top activity: {e}")
         return []
+
+async def get_top_activity():
+    return await asyncio.to_thread(get_top_activity_sync)
 
 # Викликаємо ініціалізацію при імпорті модуля
 import time

@@ -35,10 +35,10 @@ class RateLimiter:
         if self.lock is None:
             self.lock = asyncio.Lock()
         
-        async with self.lock:
-            loop = asyncio.get_event_loop()
-            
-            while True:
+        while True:
+            wait_time = 0
+            async with self.lock:
+                loop = asyncio.get_event_loop()
                 now = loop.time()
                 
                 if self.last_refill is None:
@@ -47,24 +47,25 @@ class RateLimiter:
                 # Захист від занадто частих запитів (Burst Protection)
                 time_since_last = now - self.last_call
                 if time_since_last < self.min_delay:
-                    await asyncio.sleep(self.min_delay - time_since_last)
-                    continue # Перераховуємо токени після сну
-
-                elapsed = now - self.last_refill
-                # Додаємо токени пропорційно часу
-                refill = elapsed * (self.max_calls / self.period)
-                if refill > 0:
-                    self.tokens = min(self.max_calls, self.tokens + refill)
-                    self.last_refill = now
-                
-                if self.tokens >= 1:
-                    self.tokens -= 1
-                    self.last_call = loop.time()
-                    return
+                    wait_time = self.min_delay - time_since_last
                 else:
-                    # Чекаємо поки з'явиться хоча б 1 токен
-                    wait_time = (1 - self.tokens) / (self.max_calls / self.period)
-                    await asyncio.sleep(wait_time)
+                    elapsed = now - self.last_refill
+                    # Додаємо токени пропорційно часу
+                    refill = elapsed * (self.max_calls / self.period)
+                    if refill > 0:
+                        self.tokens = min(self.max_calls, self.tokens + refill)
+                        self.last_refill = now
+                    
+                    if self.tokens >= 1:
+                        self.tokens -= 1
+                        self.last_call = loop.time()
+                        return
+                    else:
+                        # Чекаємо поки з'явиться хоча б 1 токен
+                        wait_time = (1 - self.tokens) / (self.max_calls / self.period)
+            
+            if wait_time > 0:
+                await asyncio.sleep(wait_time)
 
 # Глобальний лімітер: 5 запитів на 60 секунд (знижено для уникнення 429)
 # Додано min_delay=2.0 для уникнення 429 при серійних запитах
@@ -87,18 +88,25 @@ async def fetch(url):
     if not API_KEY:
         raise ValueError("PUBG API key is not configured.")
     
-    # Чекаємо черги (Rate Limit)
-    await _limiter.acquire()
-    
-    session = await get_session()
-    async with session.get(url) as response:
-        if response.status == 200:
-            return await response.json()
-        elif response.status == 404:
-            return None
-        else:
-            text = await response.text()
-            raise Exception(f"API Error {response.status}: {text}")
+    for attempt in range(3):
+        # Чекаємо черги (Rate Limit)
+        await _limiter.acquire()
+        
+        session = await get_session()
+        async with session.get(url) as response:
+            if response.status == 200:
+                return await response.json()
+            elif response.status == 404:
+                return None
+            elif response.status == 429:
+                print(f"[PUBG API] 429 Too Many Requests, retrying in 5 seconds (Attempt {attempt+1}/3)...")
+                await asyncio.sleep(5)
+                continue
+            else:
+                text = await response.text()
+                raise Exception(f"API Error {response.status}: {text}")
+                
+    raise Exception("API Error 429: Too Many Requests (Retries exhausted)")
 
 async def get_player(nickname: str):
     """Отримує гравця за нікнеймом."""

@@ -38,6 +38,12 @@ class EventsCog(commands.Cog):
         if is_mod_or_admin: return
         
         now = int(time.time() * 1000)
+        
+        # Очищення старих записів для уникнення витоку пам'яті
+        if len(user_messages) > 100:
+            expired = [k for k, v in user_messages.items() if not any(now - t < ANTI_SPAM_INTERVAL for t in v)]
+            for k in expired: del user_messages[k]
+            
         spam_data = user_messages.get(user_id, [])
         recent = [t for t in spam_data if now - t < ANTI_SPAM_INTERVAL]
         recent.append(now)
@@ -163,7 +169,7 @@ class EventsCog(commands.Cog):
                         if other.id == member.id or other.bot: continue
                         other_joined = voice_sessions.get(str(other.id))
                         if other_joined and (now - other_joined) > 600000:
-                            increment_playmate_relation(member.id, other.id)
+                            await increment_playmate_relation(member.id, other.id)
                 
                 try:
                     conn = sqlite3.connect(DB_FILE)
@@ -173,10 +179,10 @@ class EventsCog(commands.Cog):
                 except: pass
                 
                 # Додаємо тижневу статистику та BP
-                add_weekly_voice_stat(user_id, duration)
+                await add_weekly_voice_stat(user_id, duration)
                 bp_earned = int(duration // 60000) # 1 BP за кожну хвилину
                 if bp_earned > 0:
-                    add_balance(user_id, bp_earned)
+                    await add_balance(user_id, bp_earned)
                 
                 if duration > 3600000:
                     create_log(f"[VOICE] {member.name} spent {(duration/3600000):.1f}h in voice.")

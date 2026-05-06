@@ -503,8 +503,8 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                     await debug_channel.send(msg)
 
                 if stats.get("winPlace") == 1:
-                    if not is_match_reported(mid):
-                        mark_match_reported(mid)
+                    if not await is_match_reported(mid):
+                        await mark_match_reported(mid)
                         
                         clan_winners = []
                         mentions = []

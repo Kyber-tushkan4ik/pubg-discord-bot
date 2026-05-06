@@ -16,7 +16,7 @@ class EconomyCog(commands.Cog):
     @app_commands.command(name="profile", description="Переглянути свій профіль та баланс BP")
     async def profile(self, interaction: discord.Interaction, member: discord.Member = None):
         target = member or interaction.user
-        balance = get_balance(target.id)
+        balance = await get_balance(target.id)
         
         embed = discord.Embed(
             title=f"Профіль гравця: {target.display_name}",
@@ -35,13 +35,13 @@ class EconomyCog(commands.Cog):
         now = int(time.time() * 1000)
         
         # Додаємо статистику повідомлень для тижневої аналітики
-        add_message_stat(user_id)
+        await add_message_stat(user_id)
         
         # Перевірка кулдауну для нарахування BP
         last_reward = message_cooldowns.get(user_id, 0)
         if now - last_reward >= COOLDOWN_MS:
             message_cooldowns[user_id] = now
-            add_balance(user_id, 1) # 1 BP за повідомлення
+            await add_balance(user_id, 1) # 1 BP за повідомлення
 
 async def setup(bot):
     await bot.add_cog(EconomyCog(bot))
