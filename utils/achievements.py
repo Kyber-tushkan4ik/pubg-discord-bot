@@ -84,6 +84,9 @@ ACHIEVEMENTS = [
         "secret": False
     },
     {
+        "id": "top_fragger",
+        "name": "🥇 Альфа",
+        "description": "Посісти перше місце за кількістю вбивств у матчі.",
         "condition": lambda stats, *args: stats.get('killPlace', 100) == 1,
         "secret": False
     },
@@ -160,6 +163,7 @@ ACHIEVEMENTS = [
         "secret": True
     },
     {
+        "id": "tushkanchik",
         "super_secret": True, # Не показувати опис та умову взагалі
         "role_reward": "Тушканчік"
     },

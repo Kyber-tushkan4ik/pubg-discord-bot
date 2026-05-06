@@ -443,8 +443,12 @@ class FinalView(discord.ui.View):
             await interaction.response.send_message("❌ Не вдалося знайти вас на сервері. Зверніться до адміністратора.", ephemeral=True)
             return 
 
+        await interaction.response.edit_message(content="⏳ Завершення... Будь ласка, зачекайте.", embed=None, view=None)
         await self.cog.finish_intro(member)
-        await interaction.response.edit_message(content="🎉 Вітаємо! Ви тепер повноправний учасник клану. Канали відкрито!", embed=None, view=None)
+        try:
+            await interaction.edit_original_response(content="🎉 Вітаємо! Ви тепер повноправний учасник клану. Канали відкрито!")
+        except Exception as e:
+            print(f"Error editing original response: {e}")
 
 async def setup(bot):
     await bot.add_cog(ClanIntroCog(bot))
