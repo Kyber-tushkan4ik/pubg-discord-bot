@@ -49,8 +49,9 @@ class PubgBot(commands.Bot):
                 pass
         else:
             cmd_name = interaction.command.name if interaction.command else 'Unknown'
-            print(f"[ПОМИЛКА КОМАНДИ] {cmd_name}: {error}")
-            self.loop.create_task(notify_admin_error(self, f"Команда /{cmd_name}", error))
+            user_info = f"{interaction.user.display_name} (@{interaction.user.name})"
+            print(f"[ПОМИЛКА КОМАНДИ] {cmd_name} від {user_info}: {error}")
+            self.loop.create_task(notify_admin_error(self, f"Команда /{cmd_name} від {user_info}", error))
             try:
                 if not interaction.response.is_done():
                     await interaction.response.send_message("❌ Сталася помилка при виконанні команди. Адміністратор вже повідомлений.", ephemeral=True)
