@@ -521,11 +521,21 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                                     n_low = p_stats.get("name", "").lower()
                                     if n_low in clan_users_low:
                                         u_data = clan_users_low[n_low]
-                                        m = f"<@{u_data['userId']}>" if u_data.get('userId') and not u_data.get('isExternal') else f"**{p_stats.get('name')}**"
-                                        if m not in mentions:
-                                            mentions.append(m)
-                                            clan_winners.append(f"• {m} — 💀 Вбивств: **{p_stats.get('kills', 0)}** | 🎯 Шкода: **{round(p_stats.get('damageDealt', 0))}**")
-                                            clan_winner_names.append(p_stats.get('name', 'Unknown'))
+                                        pubg_name = p_stats.get('name')
+                                        
+                                        if u_data.get('userId') and not u_data.get('isExternal'):
+                                            mention_str = f"<@{u_data['userId']}>"
+                                            if mention_str not in mentions:
+                                                mentions.append(mention_str)
+                                            display_name = f"**{pubg_name}** ({mention_str})"
+                                        else:
+                                            display_name = f"**{pubg_name}**"
+                                            
+                                        # To prevent duplicates in clan_winners if the same user is processed twice for some reason
+                                        winner_str = f"• {display_name} — 💀 Вбивств: **{p_stats.get('kills', 0)}** | 🎯 Шкода: **{round(p_stats.get('damageDealt', 0))}**"
+                                        if winner_str not in clan_winners:
+                                            clan_winners.append(winner_str)
+                                            clan_winner_names.append(pubg_name)
                         
                         # --- ЖОРСТКЕ ОБМЕЖЕННЯ ТА НАДСИЛАННЯ СПОВІЩЕННЯ (ПОЗА ЦИКЛОМ) ---
                         message_sent_for_this_match = False
