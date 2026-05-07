@@ -108,9 +108,14 @@ def init_db():
             userId TEXT,
             username TEXT,
             ideaText TEXT,
-            timestamp INTEGER
+            timestamp INTEGER,
+            status TEXT DEFAULT 'pending'
         )
     ''')
+    try:
+        cursor.execute("ALTER TABLE ideas ADD COLUMN status TEXT DEFAULT 'pending'")
+    except sqlite3.OperationalError:
+        pass # Колонка вже існує
 
     # Ініціалізація базової статистики зброї (за офіційними даними наближено для 2-го рівня броні)
     cursor.execute("SELECT count(*) FROM weapons")
@@ -510,6 +515,34 @@ def get_all_ideas_sync():
 
 async def get_all_ideas():
     return await asyncio.to_thread(get_all_ideas_sync)
+
+def get_ideas_by_status_sync(status):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, userId, username, ideaText, timestamp, status FROM ideas WHERE status = ? ORDER BY timestamp ASC", (status,))
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+    except Exception as e:
+        print(f"[DataHandler] Error getting ideas by status: {e}")
+        return []
+
+async def get_ideas_by_status(status):
+    return await asyncio.to_thread(get_ideas_by_status_sync, status)
+
+def update_idea_status_sync(idea_id, new_status):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE ideas SET status = ? WHERE id = ?", (new_status, idea_id))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DataHandler] Error updating idea status: {e}")
+
+async def update_idea_status(idea_id, new_status):
+    await asyncio.to_thread(update_idea_status_sync, idea_id, new_status)
 
 def delete_idea_sync(idea_id):
     try:
