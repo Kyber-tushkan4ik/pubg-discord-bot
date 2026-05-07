@@ -361,6 +361,46 @@ class AdminCog(commands.Cog):
         )
         await interaction.response.send_message(embed=embed)
 
+    @app_commands.command(name="force_delete_user", description="Примусово видалити БУДЬ-ЯКОГО гравця з бази (навіть якщо він покинув сервер)")
+    @app_commands.describe(identifier="PUBG нікнейм або Discord ID гравця")
+    @is_admin()
+    async def force_delete_user(self, interaction: discord.Interaction, identifier: str):
+        input_str = identifier.strip()
+        user_data = get_data()
+
+        entry_key, entry_user = None, None
+        for key, user in user_data.items():
+            p_nick = user.get("pubgNickname", "")
+            if p_nick.lower() == input_str.lower():
+                entry_key, entry_user = key, user
+                break
+                
+            if key == input_str or user.get("userId") == input_str:
+                entry_key, entry_user = key, user
+                break
+                
+        if not entry_key:
+            candidates = []
+            for key, user in user_data.items():
+                if user.get("pubgNickname") and input_str.lower() in user.get("pubgNickname").lower():
+                    candidates.append(f"• {user.get('pubgNickname')} (Discord ID: `{user.get('userId', 'Невідомо')}`)")
+            
+            msg = f"❌ Гравця **{input_str}** не знайдено в базі."
+            if candidates:
+                msg += f"\n🔍 Можливо ви мали на увазі:\n" + "\n".join(candidates) + "\n\n💡 Ви можете скопіювати ID та вставити його замість нікнейму для видалення."
+                
+            await interaction.response.send_message(msg, ephemeral=True)
+            return
+
+        await delete_data(entry_key)
+        
+        embed = discord.Embed(
+            title='🗑️ Дані гравця примусово видалено',
+            description=f"Всі дані гравця **{entry_user.get('pubgNickname', 'Без нікнейму')}** (Discord ID: `{entry_user.get('userId', 'Невідомо')}`) були успішно видалені з бази даних бота.",
+            color=0xe74c3c
+        )
+        await interaction.response.send_message(embed=embed)
+
     @mod_group.command(name="warn", description="Видати попередження користувачу")
     @app_commands.describe(user="Користувач", reason="Причина")
     @is_admin()
