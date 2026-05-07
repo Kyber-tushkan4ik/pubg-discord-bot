@@ -297,12 +297,18 @@ class PubgCog(commands.Cog):
         mode_value = mode.value if mode else 'squad-fpp'
         user_data = get_data()
         
-        author_record = find_record(user_data, str(interaction.user.id), str(interaction.guild.id))
+        guild_id = str(interaction.guild.id) if interaction.guild else ""
+        author_record = find_record(user_data, str(interaction.user.id), guild_id)
+        if not author_record:
+            author_record = next((v for v in user_data.values() if v.get("userId") == str(interaction.user.id)), None)
+            
         if not author_record or not author_record.get("pubgNickname"):
             await interaction.response.send_message("❌ Ви не прив'язали свій PUBG профіль.", ephemeral=True)
             return
             
-        target_record = find_record(user_data, str(target.id), str(interaction.guild.id))
+        target_record = find_record(user_data, str(target.id), guild_id)
+        if not target_record:
+            target_record = next((v for v in user_data.values() if v.get("userId") == str(target.id)), None)
         if not target_record or not target_record.get("pubgNickname"):
             await interaction.response.send_message(f"❌ Гравець {target.mention} не прив'язав свій PUBG профіль.", ephemeral=True)
             return
@@ -402,7 +408,10 @@ class PubgCog(commands.Cog):
     async def matches(self, interaction: discord.Interaction, nickname: str = None):
         if not nickname:
             user_data = get_data()
-            record = find_record(user_data, str(interaction.user.id), str(interaction.guild.id))
+            guild_id = str(interaction.guild.id) if interaction.guild else ""
+            record = find_record(user_data, str(interaction.user.id), guild_id)
+            if not record:
+                record = next((v for v in user_data.values() if v.get("userId") == str(interaction.user.id)), None)
             if record and record.get("pubgNickname"):
                 nickname = record.get("pubgNickname")
                 

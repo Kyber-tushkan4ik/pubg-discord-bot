@@ -26,6 +26,9 @@ logger.addHandler(handler)
 
 def is_admin_check(interaction: discord.Interaction) -> bool:
     """Перевіряє чи є користувач адміністратором або модератором."""
+    if not hasattr(interaction.user, 'roles'):
+        return False
+        
     roles_admin = CONFIG.get("ROLES_ADMIN", [])
     has_role = any(r.name in roles_admin for r in interaction.user.roles)
     is_server_admin = interaction.user.guild_permissions.administrator

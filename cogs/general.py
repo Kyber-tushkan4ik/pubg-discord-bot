@@ -78,11 +78,13 @@ class GeneralCog(commands.Cog):
                 
             real_name = player.get("attributes", {}).get("name", nickname)
             user_id = str(interaction.user.id)
-            guild_id = str(interaction.guild.id)
+            guild_id = str(interaction.guild.id) if interaction.guild else ""
             key = get_record_key(user_id, guild_id)
             
             user_data = get_data()
             record = find_record(user_data, user_id, guild_id)
+            if not record and not guild_id:
+                record = next((v for v in user_data.values() if v.get("userId") == user_id), None)
             
             if not record:
                 user_data[key] = {
@@ -103,19 +105,20 @@ class GeneralCog(commands.Cog):
             await interaction.followup.send(embed=embed)
             
             try:
-                bot_member = interaction.guild.me
-                # Використовуємо app_permissions для слеш-команд, це надійніше
-                if not interaction.app_permissions.manage_nicknames:
-                    create_log(f"[NICKNAME] Missing 'manage_nicknames' permission in {interaction.guild.name} (app_permissions)")
-                elif interaction.user.id == interaction.guild.owner_id:
-                    create_log(f"[NICKNAME] Cannot change nickname for guild owner: {interaction.user}")
-                    await interaction.followup.send("⚠️ Я не можу змінити ваш нікнейм, оскільки ви є власником сервера.", ephemeral=True)
-                elif bot_member.top_role <= interaction.user.top_role:
-                    create_log(f"[NICKNAME] Role hierarchy issue: {bot_member.top_role} <= {interaction.user.top_role}")
-                    await interaction.followup.send("⚠️ Моя роль нижча або така сама, як ваша, тому я не можу змінити ваш нікнейм.", ephemeral=True)
-                else:
-                    await interaction.user.edit(nick=real_name)
-                    create_log(f"[NICKNAME] Changed for {interaction.user} to {real_name}")
+                if interaction.guild:
+                    bot_member = interaction.guild.me
+                    # Використовуємо app_permissions для слеш-команд, це надійніше
+                    if not interaction.app_permissions.manage_nicknames:
+                        create_log(f"[NICKNAME] Missing 'manage_nicknames' permission in {interaction.guild.name} (app_permissions)")
+                    elif interaction.user.id == interaction.guild.owner_id:
+                        create_log(f"[NICKNAME] Cannot change nickname for guild owner: {interaction.user}")
+                        await interaction.followup.send("⚠️ Я не можу змінити ваш нікнейм, оскільки ви є власником сервера.", ephemeral=True)
+                    elif bot_member.top_role <= interaction.user.top_role:
+                        create_log(f"[NICKNAME] Role hierarchy issue: {bot_member.top_role} <= {interaction.user.top_role}")
+                        await interaction.followup.send("⚠️ Моя роль нижча або така сама, як ваша, тому я не можу змінити ваш нікнейм.", ephemeral=True)
+                    else:
+                        await interaction.user.edit(nick=real_name)
+                        create_log(f"[NICKNAME] Changed for {interaction.user} to {real_name}")
             except Exception as e:
                 create_log(f"[NICKNAME] Помилка: {e}")
                 
@@ -125,9 +128,12 @@ class GeneralCog(commands.Cog):
     @app_commands.command(name="unlink", description="Видалити свою прив'язку PUBG нікнейму")
     async def unlink(self, interaction: discord.Interaction):
         user_id = str(interaction.user.id)
-        guild_id = str(interaction.guild.id)
+        guild_id = str(interaction.guild.id) if interaction.guild else ""
         user_data = get_data()
         record = find_record(user_data, user_id, guild_id)
+        
+        if not record and not guild_id:
+            record = next((v for v in user_data.values() if v.get("userId") == user_id), None)
         
         if not record or not record.get("pubgNickname"):
             await interaction.response.send_message("❌ У вас немає прив'язаного PUBG нікнейму.", ephemeral=True)
@@ -148,7 +154,7 @@ class GeneralCog(commands.Cog):
 
     @app_commands.command(name="balance", description="Розподілити гравців у голосовому каналі на дві рівні команди за K/D")
     async def balance(self, interaction: discord.Interaction):
-        if not interaction.user.voice or not interaction.user.voice.channel:
+        if not hasattr(interaction.user, 'voice') or not interaction.user.voice or not interaction.user.voice.channel:
             await interaction.response.send_message("❌ Ви повинні бути у голосовому каналі.", ephemeral=True)
             return
             

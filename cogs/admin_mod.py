@@ -677,8 +677,9 @@ class AdminCog(commands.Cog):
             # Відправляємо в особисті повідомлення
             try:
                 file = discord.File(backup_file, filename="database.sqlite")
+                guild_name = interaction.guild.name if interaction.guild else "Direct Message"
                 await interaction.user.send(
-                    content=f"📦 **Резервна копія бази даних** від {interaction.guild.name}\nДата: {time.strftime('%Y-%m-%d %H:%M:%S')}",
+                    content=f"📦 **Резервна копія бази даних** від {guild_name}\nДата: {time.strftime('%Y-%m-%d %H:%M:%S')}",
                     file=file
                 )
                 await interaction.followup.send("✅ Резервну копію надіслано вам в особисті повідомлення (DM).")
