@@ -101,9 +101,9 @@ class AdminIdeasReviewView(discord.ui.View):
             
         self.update_buttons()
         
-        # Повідомляємо адміна
-        await interaction.response.send_message(f"✅ Ідею відзначено як прийняту{archive_msg}.", ephemeral=True)
-        await interaction.message.edit(embed=self.get_current_embed(), view=self)
+        # Оновлюємо основне повідомлення з чергою ідей та надсилаємо підтвердження
+        await interaction.response.edit_message(embed=self.get_current_embed(), view=self)
+        await interaction.followup.send(f"✅ Ідею відзначено як прийняту{archive_msg}.", ephemeral=True)
 
     @discord.ui.button(label="Відхилити", style=discord.ButtonStyle.danger, custom_id="idea_reject", emoji="❌")
     async def reject_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
