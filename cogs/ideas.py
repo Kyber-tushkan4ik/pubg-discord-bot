@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 import time
 
-from utils.data_handler import add_idea, get_all_ideas, delete_idea, clear_all_ideas
+from utils.data_handler import add_idea, get_all_ideas, delete_idea, clear_all_ideas, get_settings
 from utils.helpers import is_admin
 
 class IdeaModal(discord.ui.Modal, title="Запропонувати ідею"):
@@ -68,9 +68,31 @@ class AdminIdeasReviewView(discord.ui.View):
     @discord.ui.button(label="Прийняти", style=discord.ButtonStyle.success, custom_id="idea_accept", emoji="✅")
     async def accept_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         idea = self.ideas[self.current_index]
-        idea_id = idea[0]
+        idea_id, user_id, username, idea_text, timestamp = idea
         
-        # Видаляємо з бази, так як прийняли
+        # Спроба надіслати прийняту ідею в канал звітів для архіву
+        settings = get_settings()
+        report_channel_id = settings.get("reportsChannelId")
+        archive_msg = ""
+        
+        if report_channel_id:
+            try:
+                channel = interaction.guild.get_channel(int(report_channel_id))
+                if channel:
+                    embed = discord.Embed(
+                        title=f"✅ Прийнята ідея від {username}",
+                        description=idea_text,
+                        color=0x2ecc71,
+                        timestamp=discord.utils.utcnow()
+                    )
+                    embed.add_field(name="Автор", value=f"<@{user_id}>", inline=True)
+                    embed.set_footer(text=f"ID ідеї: {idea_id}")
+                    await channel.send(embed=embed)
+                    archive_msg = f" та архівована в канал <#{report_channel_id}>"
+            except Exception as e:
+                print(f"Error archiving idea: {e}")
+
+        # Видаляємо з бази (з черги на розгляд), так як прийняли
         await delete_idea(idea_id)
         self.ideas.pop(self.current_index)
         
@@ -80,7 +102,7 @@ class AdminIdeasReviewView(discord.ui.View):
         self.update_buttons()
         
         # Повідомляємо адміна
-        await interaction.response.send_message("✅ Ідею відзначено як прийняту (вона видалена з черги).", ephemeral=True)
+        await interaction.response.send_message(f"✅ Ідею відзначено як прийняту{archive_msg}.", ephemeral=True)
         await interaction.message.edit(embed=self.get_current_embed(), view=self)
 
     @discord.ui.button(label="Відхилити", style=discord.ButtonStyle.danger, custom_id="idea_reject", emoji="❌")
