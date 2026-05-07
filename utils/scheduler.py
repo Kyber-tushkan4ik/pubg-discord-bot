@@ -508,6 +508,7 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                         
                         clan_winners = []
                         mentions = []
+                        clan_winner_names = []
                         
                         user_data = get_data()
                         clan_users_low = {u.get("pubgNickname", "").lower(): u for u in user_data.values() if u.get("pubgNickname")}
@@ -524,6 +525,7 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                                         if m not in mentions:
                                             mentions.append(m)
                                             clan_winners.append(f"• {m} — 💀 Вбивств: **{p_stats.get('kills', 0)}** | 🎯 Шкода: **{round(p_stats.get('damageDealt', 0))}**")
+                                            clan_winner_names.append(p_stats.get('name', 'Unknown'))
                         
                         # --- ЖОРСТКЕ ОБМЕЖЕННЯ ТА НАДСИЛАННЯ СПОВІЩЕННЯ (ПОЗА ЦИКЛОМ) ---
                         message_sent_for_this_match = False
@@ -565,7 +567,8 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                                 embed.set_footer(text="Офіційні дані PUBG API")
         
                                 await win_channel.send(content=f"🎉 Вітаємо {' '.join(mentions)}!", embed=embed)
-                                create_log(f"[WIN] Перемога зафіксована для матчу {mid} ({len(clan_winners)} гравців з клану)!")
+                                names_str = ", ".join(clan_winner_names)
+                                create_log(f"[WIN] Перемога зафіксована для {names_str} (Матч: {mid})!")
                                 message_sent_for_this_match = True
                 
                 if p.get("userId"):
