@@ -37,6 +37,7 @@ class AdminIdeasReviewView(discord.ui.View):
         self.ideas = list(ideas)
         self.current_index = 0
         self.status = status
+        self.add_item(IdeaCategorySelect())
         self.update_buttons()
 
     def update_buttons(self):
@@ -139,7 +140,28 @@ class AdminIdeasReviewView(discord.ui.View):
         self.ideas = []
         self.update_buttons()
         await interaction.response.edit_message(embed=self.get_current_embed(), view=self)
-        await interaction.followup.send("🧹 Всі залишені ідеї були успішно видалені з бази.", ephemeral=True)
+        await interaction.followup.send(f"🧹 Категорію '{self.status}' очищено.", ephemeral=True)
+
+class IdeaCategorySelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="На розгляді", emoji="📥", value="pending", description="Нові пропозиції"),
+            discord.SelectOption(label="Прийняті", emoji="✅", value="accepted", description="Архів схвалених ідей"),
+            discord.SelectOption(label="Відхилені", emoji="❌", value="rejected", description="Архів відхилених ідей")
+        ]
+        super().__init__(placeholder="Змінити категорію...", options=options, row=2)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: AdminIdeasReviewView = self.view
+        new_status = self.values[0]
+        ideas = await get_ideas_by_status(new_status)
+        
+        view.ideas = list(ideas)
+        view.status = new_status
+        view.current_index = 0
+        view.update_buttons()
+        
+        await interaction.response.edit_message(embed=view.get_current_embed(), view=view)
 
 class IdeaPanelView(discord.ui.View):
     def __init__(self):
@@ -148,33 +170,6 @@ class IdeaPanelView(discord.ui.View):
     @discord.ui.button(label="Запропонувати ідею", style=discord.ButtonStyle.primary, custom_id="persistent_idea_panel_btn", emoji="💡")
     async def create_idea_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(IdeaModal())
-
-    @discord.ui.button(label="На розгляді", style=discord.ButtonStyle.secondary, custom_id="panel_view_pending", emoji="📥")
-    async def view_pending(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await is_admin()(interaction):
-            await interaction.response.send_message("❌ Ця кнопка тільки для адміністрації.", ephemeral=True)
-            return
-        ideas = await get_ideas_by_status('pending')
-        view = AdminIdeasReviewView(ideas, status='pending')
-        await interaction.response.send_message(embed=view.get_current_embed(), view=view, ephemeral=True)
-
-    @discord.ui.button(label="Прийняті", style=discord.ButtonStyle.secondary, custom_id="panel_view_accepted", emoji="✅")
-    async def view_accepted(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await is_admin()(interaction):
-            await interaction.response.send_message("❌ Ця кнопка тільки для адміністрації.", ephemeral=True)
-            return
-        ideas = await get_ideas_by_status('accepted')
-        view = AdminIdeasReviewView(ideas, status='accepted')
-        await interaction.response.send_message(embed=view.get_current_embed(), view=view, ephemeral=True)
-
-    @discord.ui.button(label="Відхилені", style=discord.ButtonStyle.secondary, custom_id="panel_view_rejected", emoji="❌")
-    async def view_rejected(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await is_admin()(interaction):
-            await interaction.response.send_message("❌ Ця кнопка тільки для адміністрації.", ephemeral=True)
-            return
-        ideas = await get_ideas_by_status('rejected')
-        view = AdminIdeasReviewView(ideas, status='rejected')
-        await interaction.response.send_message(embed=view.get_current_embed(), view=view, ephemeral=True)
 
 class IdeasCog(commands.Cog):
     def __init__(self, bot):
@@ -207,22 +202,20 @@ class IdeasCog(commands.Cog):
         
         await interaction.followup.send(embed=embed, view=view)
 
-    @app_commands.command(name="setup_ideas_panel", description="Створити розширену панель управління ідеями (Адмін)")
+    @app_commands.command(name="setup_ideas_panel", description="Створити панель для прийому ідей в поточному каналі (Адмін)")
     @is_admin()
     async def setup_ideas_panel_cmd(self, interaction: discord.Interaction):
         embed = discord.Embed(
-            title="💡 Центр ідей та пропозицій",
+            title="💡 Скринька ідей та пропозицій",
             description=(
-                "Вітаємо! У цьому розділі ви можете вплинути на розвиток нашого бота та клану.\n\n"
-                "🔹 **Гравці:** Натисніть кнопку **💡 Запропонувати ідею**, щоб відкрити форму.\n"
-                "🔸 **Адміністрація:** Використовуйте кнопки нижче для перегляду нових, прийнятих або відхилених пропозицій.\n\n"
-                "*Всі ваші ідеї допомагають нам ставати кращими!*"
+                "Маєте ідею, як покращити бота чи клан? Знайшли баг або хочете запропонувати нову фічу?\n\n"
+                "Натисніть кнопку нижче, щоб відправити свою пропозицію напряму адміністрації.\n"
+                "Всі ідеї ретельно розглядаються в кінці тижня!"
             ),
             color=0x3498db
         )
-        embed.set_thumbnail(url="https://i.imgur.com/8N6y8Vl.png") # Приклад іконки лампочки
         await interaction.channel.send(embed=embed, view=IdeaPanelView())
-        await interaction.response.send_message("✅ Розширену панель успішно створено!", ephemeral=True)
+        await interaction.response.send_message("✅ Панель успішно створена в цьому каналі!", ephemeral=True)
 
 async def setup(bot):
     bot.add_view(IdeaPanelView())
