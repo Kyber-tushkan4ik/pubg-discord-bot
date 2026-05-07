@@ -102,6 +102,15 @@ def init_db():
             weeklyVoiceTime INTEGER DEFAULT 0
         )
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS ideas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            userId TEXT,
+            username TEXT,
+            ideaText TEXT,
+            timestamp INTEGER
+        )
+    ''')
 
     # Ініціалізація базової статистики зброї (за офіційними даними наближено для 2-го рівня броні)
     cursor.execute("SELECT count(*) FROM weapons")
@@ -469,6 +478,64 @@ def get_top_activity_sync():
 
 async def get_top_activity():
     return await asyncio.to_thread(get_top_activity_sync)
+
+# --- Ideas System ---
+def add_idea_sync(user_id, username, idea_text):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO ideas (userId, username, ideaText, timestamp) 
+            VALUES (?, ?, ?, ?)
+        ''', (str(user_id), str(username), str(idea_text), int(time.time() * 1000)))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DataHandler] Error adding idea: {e}")
+
+async def add_idea(user_id, username, idea_text):
+    await asyncio.to_thread(add_idea_sync, user_id, username, idea_text)
+
+def get_all_ideas_sync():
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, userId, username, ideaText, timestamp FROM ideas ORDER BY timestamp ASC")
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+    except Exception as e:
+        print(f"[DataHandler] Error getting ideas: {e}")
+        return []
+
+async def get_all_ideas():
+    return await asyncio.to_thread(get_all_ideas_sync)
+
+def delete_idea_sync(idea_id):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM ideas WHERE id = ?", (idea_id,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DataHandler] Error deleting idea: {e}")
+
+async def delete_idea(idea_id):
+    await asyncio.to_thread(delete_idea_sync, idea_id)
+
+def clear_all_ideas_sync():
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM ideas")
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DataHandler] Error clearing all ideas: {e}")
+
+async def clear_all_ideas():
+    await asyncio.to_thread(clear_all_ideas_sync)
 
 # Викликаємо ініціалізацію при імпорті модуля
 import time
