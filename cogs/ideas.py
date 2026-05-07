@@ -111,6 +111,13 @@ class AdminIdeasReviewView(discord.ui.View):
         await interaction.response.edit_message(embed=self.get_current_embed(), view=self)
         await interaction.followup.send("🧹 Всі залишені ідеї були успішно видалені з бази.", ephemeral=True)
 
+class IdeaPanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Запропонувати ідею", style=discord.ButtonStyle.primary, custom_id="persistent_idea_panel_btn", emoji="💡")
+    async def create_idea_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(IdeaModal())
 
 class IdeasCog(commands.Cog):
     def __init__(self, bot):
@@ -137,6 +144,22 @@ class IdeasCog(commands.Cog):
         
         await interaction.followup.send(embed=embed, view=view)
 
+    @app_commands.command(name="setup_ideas_panel", description="Створити панель для прийому ідей в поточному каналі (Адмін)")
+    @is_admin()
+    async def setup_ideas_panel_cmd(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title="💡 Скринька ідей та пропозицій",
+            description=(
+                "Маєте ідею, як покращити бота чи клан? Знайшли баг або хочете запропонувати нову фічу?\n\n"
+                "Натисніть кнопку нижче, щоб відправити свою пропозицію напряму адміністрації.\n"
+                "Всі ідеї ретельно розглядаються в кінці тижня!"
+            ),
+            color=0x3498db
+        )
+        await interaction.channel.send(embed=embed, view=IdeaPanelView())
+        await interaction.response.send_message("✅ Панель успішно створена в цьому каналі!", ephemeral=True)
+
 async def setup(bot):
+    bot.add_view(IdeaPanelView())
     await bot.add_cog(IdeasCog(bot))
     print("Loaded extension: ideas")
