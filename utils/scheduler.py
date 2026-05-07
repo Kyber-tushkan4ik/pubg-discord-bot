@@ -531,12 +531,15 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                         if clan_winners and not message_sent_for_this_match:
                             m_attr = match.get("data", {}).get("attributes", {})
                             raw_mode = m_attr.get("gameMode", "squad")
+                            raw_type = m_attr.get("matchType", "official")
                             
                             # Фільтрація TDM
                             if raw_mode == 'tdm':
                                 create_log(f"[TDM] Пропуск перемоги у TDM для {p_nickname}")
                                 message_sent_for_this_match = True # Позначаємо як оброблене
                             else:
+                                match_type_str = "Ранговий" if raw_type == "competitive" else "Звичайний" if raw_type == "official" else raw_type.capitalize()
+                                
                                 mode_map = {
                                     "squad": "Команди TPP",
                                     "squad-fpp": "Команди FPP",
@@ -555,7 +558,7 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                                 embed = discord.Embed(
                                     title=title, 
                                     url=match_url,
-                                    description=f"Наші розносять лобі! 🚀\n\n**Режим:** `{nice_mode}`\n**Карта:** `{map_name}`\n\n" + "\n".join(clan_winners), 
+                                    description=f"Наші розносять лобі! 🚀\n\n**Тип матчу:** `{match_type_str}`\n**Режим:** `{nice_mode}`\n**Карта:** `{map_name}`\n\n" + "\n".join(clan_winners), 
                                     color=0xFFCC00
                                 )
                                 embed.add_field(name="🔗 Підтвердження", value=f"[Переглянути деталі на PUBG Lookup]({match_url})", inline=False)

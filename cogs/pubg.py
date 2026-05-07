@@ -447,6 +447,8 @@ class PubgCog(commands.Cog):
                 
                 attr = match.get("data", {}).get("attributes", {})
                 mode = attr.get("gameMode", "").upper()
+                m_type = attr.get("matchType", "official")
+                match_type_str = "Ранговий" if m_type == "competitive" else "Звичайний" if m_type == "official" else m_type.capitalize()
                 map_n = translate_map(attr.get("mapName", ""))
                 duration = f"{int(attr.get('duration', 0) // 60)}m"
                 
@@ -460,7 +462,7 @@ class PubgCog(commands.Cog):
                     
                     emoji = '🏆' if place == 1 else ('🥈' if place <= 10 else '💀')
                     
-                    embed.add_field(name=f"{emoji} Match {i+1} - {mode} ({map_n})", value=f"Top **{place}** | Kills: **{kills}** | Dmg: **{dmg}** \n Тривалість: {duration}", inline=False)
+                    embed.add_field(name=f"{emoji} Match {i+1} - {mode} ({map_n})", value=f"**Тип:** `{match_type_str}` | Top **{place}** | Kills: **{kills}** | Dmg: **{dmg}** \n Тривалість: {duration}", inline=False)
                     
             await interaction.followup.send(embed=embed)
             
