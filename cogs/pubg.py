@@ -70,22 +70,27 @@ class LeaderboardView(discord.ui.View):
         await interaction.response.edit_message(embed=self.create_embed("monthly"), view=self)
 
 class StatsView(discord.ui.View):
-    def __init__(self, nickname, player_id, lifetime_stats, ranked_stats, last_match_embed_field=None, footer_text=""):
+    def __init__(self, nickname, player_id, lifetime_stats, season_stats, ranked_stats, last_match_embed_field=None, footer_text=""):
         super().__init__(timeout=180)
         self.nickname = nickname
         self.player_id = player_id
         self.lifetime_stats = lifetime_stats
+        self.season_stats = season_stats
         self.ranked_stats = ranked_stats
         self.last_match_embed_field = last_match_embed_field
         self.footer_text = footer_text
-        self.current_mode = "normal" # Default
+        self.current_mode = "season" # Default to current season normal
 
-    def create_embed(self, mode="normal"):
+    def create_embed(self, mode="season"):
         self.current_mode = mode
-        if mode == "normal":
-            title = f"📊 Статистика PUBG: {self.nickname} (Life)"
-            color = 0xFF9900
+        if mode == "lifetime":
+            title = f"🌐 Статистика PUBG: {self.nickname} (За весь час)"
+            color = 0x95A5A6
             data = self.lifetime_stats
+        elif mode == "season":
+            title = f"📅 Статистика PUBG: {self.nickname} (Поточний сезон)"
+            color = 0x2ECC71
+            data = self.season_stats
         else:
             title = f"🔥 Рангова статистика: {self.nickname}"
             color = 0xE74C3C
@@ -93,7 +98,7 @@ class StatsView(discord.ui.View):
 
         embed = discord.Embed(title=title, color=color)
         
-        if mode == "normal":
+        if mode in ["lifetime", "season"]:
             all_stats = data.get("attributes", {}).get("gameModeStats", {})
             modes = ['squad-fpp', 'squad', 'duo-fpp', 'duo', 'solo-fpp', 'solo']
             best_mode = None
@@ -108,7 +113,7 @@ class StatsView(discord.ui.View):
                     best_mode = m
             
             if not best_stats or max_rounds == 0:
-                embed.description = "Статистика за весь час недоступна."
+                embed.description = "Статистика за цей період відсутня (0 матчів)."
             else:
                 mode_map = {
                     "squad": "Команди TPP", "squad-fpp": "Команди FPP",
@@ -129,8 +134,6 @@ class StatsView(discord.ui.View):
             # Ranked Stats
             ranked_attr = data.get("attributes", {}) if data else {}
             gm_stats = ranked_attr.get("rankedGameModeStats", {})
-            
-            # Шукаємо Squad FPP або Squad
             r_stats = gm_stats.get("squad-fpp") or gm_stats.get("squad")
             
             if not r_stats:
@@ -165,13 +168,17 @@ class StatsView(discord.ui.View):
             
         return embed
 
-    @discord.ui.button(label="Звичайна 📊", style=discord.ButtonStyle.primary)
-    async def normal_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(embed=self.create_embed("normal"), view=self)
+    @discord.ui.button(label="Сезон 📅", style=discord.ButtonStyle.success)
+    async def season_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(embed=self.create_embed("season"), view=self)
 
     @discord.ui.button(label="Рангова 🔥", style=discord.ButtonStyle.danger)
     async def ranked_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(embed=self.create_embed("ranked"), view=self)
+
+    @discord.ui.button(label="За весь час 🌐", style=discord.ButtonStyle.secondary)
+    async def lifetime_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(embed=self.create_embed("lifetime"), view=self)
 
 class PubgCog(commands.Cog):
     def __init__(self, bot):
@@ -220,11 +227,13 @@ class PubgCog(commands.Cog):
                 get_player_season_stats(player["id"], 'lifetime'),
             ]
             if current_season_id:
+                tasks.append(get_player_season_stats(player["id"], current_season_id))
                 tasks.append(get_player_ranked_stats(player["id"], current_season_id))
             
             results = await asyncio.gather(*tasks)
             lifetime_stats = results[0]
-            ranked_stats = results[1] if len(results) > 1 else None
+            season_stats = results[1] if len(results) > 1 else None
+            ranked_stats = results[2] if len(results) > 2 else None
             
             if not lifetime_stats:
                 await interaction.followup.send(f"Не вдалося отримати статистику для гравця **{nickname}**.")
@@ -277,8 +286,8 @@ class PubgCog(commands.Cog):
                 except Exception as e:
                     print(f"Error parsing last match: {e}")
 
-            view = StatsView(nickname, player["id"], lifetime_stats, ranked_stats, last_match_field, footer_text)
-            embed = view.create_embed("normal") # Починаємо зі звичайної статистики
+            view = StatsView(nickname, player["id"], lifetime_stats, season_stats, ranked_stats, last_match_field, footer_text)
+            embed = view.create_embed("season") # Тепер починаємо з поточного сезону
             
             cooldowns[user_id] = int(time.time() * 1000)
             await interaction.followup.send(embed=embed, view=view)
