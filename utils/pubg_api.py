@@ -13,7 +13,8 @@ API_KEY = os.getenv("PUBG_API_KEY")
 BASE_URL = "https://api.pubg.com/shards/steam"
 HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
-    "Accept": "application/vnd.api+json"
+    "Accept": "application/vnd.api+json",
+    "Cache-Control": "no-cache"
 }
 
 if not API_KEY or API_KEY == 'YOUR_PUBG_API_KEY_HERE':
@@ -147,6 +148,41 @@ async def get_player_season_stats(player_id: str, season_id: str = "lifetime"):
     except Exception as e:
         print(f"Error fetching season stats: {e}")
         return None
+
+async def get_player_ranked_stats(player_id: str, season_id: str):
+    """Отримує рангову статистику гравця за сезон."""
+    url = f"{BASE_URL}/players/{player_id}/seasons/{season_id}/ranked"
+    try:
+        data = await fetch(url)
+        if data and "data" in data:
+            return data["data"]
+        return None
+    except Exception as e:
+        print(f"Error fetching ranked stats: {e}")
+        return None
+
+async def get_seasons():
+    """Отримує список усіх сезонів."""
+    url = f"{BASE_URL}/seasons"
+    try:
+        data = await fetch(url)
+        if data and "data" in data:
+            return data["data"]
+        return []
+    except Exception as e:
+        print(f"Error fetching seasons: {e}")
+        return []
+
+async def get_current_season_id():
+    """Отримує ID поточного сезону."""
+    seasons = await get_seasons()
+    for s in seasons:
+        if s.get("attributes", {}).get("isCurrentSeason"):
+            return s["id"]
+    # Fallback: останній сезон у списку, якщо не знайшли прапорець
+    if seasons:
+        return seasons[-1]["id"]
+    return None
 
 async def get_match(match_id: str):
     """Отримує деталі матчу."""

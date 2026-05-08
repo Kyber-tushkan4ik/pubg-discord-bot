@@ -10,7 +10,10 @@ import asyncio
 
 from datetime import datetime, timedelta
 from utils.data_handler import get_data, get_settings
-from utils.pubg_api import get_player, get_player_season_stats, get_matches, get_latest_match_date, get_match
+from utils.pubg_api import (
+    get_player, get_player_season_stats, get_matches, 
+    get_latest_match_date, get_match, get_player_ranked_stats, get_current_season_id
+)
 from utils.helpers import find_record, translate_map
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../config.json')
@@ -66,6 +69,110 @@ class LeaderboardView(discord.ui.View):
     async def monthly_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(embed=self.create_embed("monthly"), view=self)
 
+class StatsView(discord.ui.View):
+    def __init__(self, nickname, player_id, lifetime_stats, ranked_stats, last_match_embed_field=None, footer_text=""):
+        super().__init__(timeout=180)
+        self.nickname = nickname
+        self.player_id = player_id
+        self.lifetime_stats = lifetime_stats
+        self.ranked_stats = ranked_stats
+        self.last_match_embed_field = last_match_embed_field
+        self.footer_text = footer_text
+        self.current_mode = "normal" # Default
+
+    def create_embed(self, mode="normal"):
+        self.current_mode = mode
+        if mode == "normal":
+            title = f"📊 Статистика PUBG: {self.nickname} (Life)"
+            color = 0xFF9900
+            data = self.lifetime_stats
+        else:
+            title = f"🔥 Рангова статистика: {self.nickname}"
+            color = 0xE74C3C
+            data = self.ranked_stats
+
+        embed = discord.Embed(title=title, color=color)
+        
+        if mode == "normal":
+            all_stats = data.get("attributes", {}).get("gameModeStats", {})
+            modes = ['squad-fpp', 'squad', 'duo-fpp', 'duo', 'solo-fpp', 'solo']
+            best_mode = None
+            best_stats = None
+            max_rounds = -1
+            
+            for m in modes:
+                s = all_stats.get(m)
+                if s and s.get("roundsPlayed", 0) > max_rounds:
+                    max_rounds = s.get("roundsPlayed", 0)
+                    best_stats = s
+                    best_mode = m
+            
+            if not best_stats or max_rounds == 0:
+                embed.description = "Статистика за весь час недоступна."
+            else:
+                mode_map = {
+                    "squad": "Команди TPP", "squad-fpp": "Команди FPP",
+                    "duo": "Дуо TPP", "duo-fpp": "Дуо FPP",
+                    "solo": "Соло TPP", "solo-fpp": "Соло FPP"
+                }
+                nice_mode = mode_map.get(best_mode, best_mode.upper())
+                embed.add_field(name="Найкращий режим", value=f"`{nice_mode}`", inline=True)
+                embed.add_field(name="Матчі", value=best_stats.get("roundsPlayed", 0), inline=True)
+                embed.add_field(name="Перемоги", value=best_stats.get("wins", 0), inline=True)
+                embed.add_field(name="Вбивства", value=best_stats.get("kills", 0), inline=True)
+                
+                deaths = max(best_stats.get("losses", 0), 1)
+                kd = best_stats.get("kills", 0) / deaths
+                embed.add_field(name="K/D Ratio", value=f"**{kd:.2f}**", inline=True)
+                embed.add_field(name="Сер. шкода", value=f"{round(best_stats.get('damageDealt', 0) / max_rounds)}", inline=True)
+        else:
+            # Ranked Stats
+            ranked_attr = data.get("attributes", {}) if data else {}
+            gm_stats = ranked_attr.get("rankedGameModeStats", {})
+            
+            # Шукаємо Squad FPP або Squad
+            r_stats = gm_stats.get("squad-fpp") or gm_stats.get("squad")
+            
+            if not r_stats:
+                embed.description = "Рангова статистика за поточний сезон відсутня."
+            else:
+                tier = r_stats.get("currentTier", {}).get("tier", "Unranked")
+                sub_tier = r_stats.get("currentTier", {}).get("subTier", "")
+                points = r_stats.get("currentRankPoint", 0)
+                
+                embed.add_field(name="Ранг", value=f"**{tier} {sub_tier}** ({points} RP)", inline=True)
+                embed.add_field(name="Матчі", value=r_stats.get("roundsPlayed", 0), inline=True)
+                embed.add_field(name="Топ-10", value=r_stats.get("top10s", 0), inline=True)
+                
+                k = r_stats.get("kills", 0)
+                d = max(r_stats.get("deaths", 0), 1)
+                rkd = k / d
+                embed.add_field(name="Ranked K/D", value=f"**{rkd:.2f}**", inline=True)
+                
+                avg_dmg = r_stats.get("damageDealt", 0) / max(r_stats.get("roundsPlayed", 1), 1)
+                embed.add_field(name="Сер. шкода", value=f"{round(avg_dmg)}", inline=True)
+                embed.add_field(name="Асисти", value=r_stats.get("assists", 0), inline=True)
+
+        if self.last_match_embed_field:
+            embed.add_field(
+                name=self.last_match_embed_field['name'],
+                value=self.last_match_embed_field['value'],
+                inline=False
+            )
+        
+        if self.footer_text:
+            embed.set_footer(text=self.footer_text)
+            
+        return embed
+
+    @discord.ui.button(label="Звичайна 📊", style=discord.ButtonStyle.primary)
+    async def normal_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(embed=self.create_embed("normal"), view=self)
+
+    @discord.ui.button(label="Рангова 🔥", style=discord.ButtonStyle.danger)
+    async def ranked_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(embed=self.create_embed("ranked"), view=self)
+
 class PubgCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -105,57 +212,35 @@ class PubgCog(commands.Cog):
             if not player:
                 await interaction.followup.send(f"Гравця з нікнеймом **{nickname}** не знайдено.")
                 return
-                
-            stats_data = await get_player_season_stats(player["id"], 'lifetime')
-            # simplified embed instead of image card for rewrite
             
-            if not stats_data or "gameModeStats" not in stats_data.get("attributes", {}):
+            # Паралельно отримуємо різні типи статистики
+            current_season_id = await get_current_season_id()
+            
+            tasks = [
+                get_player_season_stats(player["id"], 'lifetime'),
+            ]
+            if current_season_id:
+                tasks.append(get_player_ranked_stats(player["id"], current_season_id))
+            
+            results = await asyncio.gather(*tasks)
+            lifetime_stats = results[0]
+            ranked_stats = results[1] if len(results) > 1 else None
+            
+            if not lifetime_stats:
                 await interaction.followup.send(f"Не вдалося отримати статистику для гравця **{nickname}**.")
                 return
-                
-            all_stats = stats_data["attributes"]["gameModeStats"]
-            modes = ['squad-fpp', 'squad', 'duo-fpp', 'duo', 'solo-fpp', 'solo']
-            
-            best_mode = None
-            best_stats = None
-            max_rounds = -1
-            
-            for m in modes:
-                s = all_stats.get(m)
-                if s and s.get("roundsPlayed", 0) > max_rounds:
-                    max_rounds = s.get("roundsPlayed", 0)
-                    best_stats = s
-                    best_mode = m
-                    
-            if not best_stats or max_rounds == 0:
-                await interaction.followup.send(f"Статистика для гравця **{nickname}** недоступна (0 матчів).")
-                return
-                
-            embed = discord.Embed(title=f"📊 Статистика PUBG: {nickname}", color=0xFF9900)
+
+            # Отримання даних останнього матчу для відображення в обох режимах
+            last_match_field = None
+            footer_text = ""
+            last_match_date = await get_latest_match_date(player)
             
             mode_map = {
-                "squad": "Команди TPP",
-                "squad-fpp": "Команди FPP",
-                "duo": "Дуо TPP",
-                "duo-fpp": "Дуо FPP",
-                "solo": "Соло TPP",
-                "solo-fpp": "Соло FPP"
+                "squad": "Команди TPP", "squad-fpp": "Команди FPP",
+                "duo": "Дуо TPP", "duo-fpp": "Дуо FPP",
+                "solo": "Соло TPP", "solo-fpp": "Соло FPP"
             }
-            nice_best_mode = mode_map.get(best_mode, best_mode.upper())
-            
-            embed.add_field(name="Найкращий режим", value=f"`{nice_best_mode}`", inline=True)
-            embed.add_field(name="Матчі (Life)", value=best_stats.get("roundsPlayed", 0), inline=True)
-            embed.add_field(name="Перемоги (Life)", value=best_stats.get("wins", 0), inline=True)
-            embed.add_field(name="Вбивства (Life)", value=best_stats.get("kills", 0), inline=True)
-            
-            deaths = best_stats.get("losses", 1)
-            kills = best_stats.get("kills", 0)
-            kd = kills / max(deaths, 1)
-            embed.add_field(name="K/D Ratio", value=f"**{kd:.2f}**", inline=True)
-            embed.add_field(name="Сер. шкода", value=f"{round(best_stats.get('damageDealt', 0) / max(max_rounds, 1))}", inline=True)
-            
-            # Отримання даних останнього матчу
-            last_match_date = await get_latest_match_date(player)
+
             if last_match_date:
                 try:
                     rel_matches = player.get("relationships", {}).get("matches", {}).get("data", [])
@@ -165,8 +250,9 @@ class PubgCog(commands.Cog):
                         if m_data and "data" in m_data:
                             attr = m_data["data"]["attributes"]
                             m_mode = mode_map.get(attr.get("gameMode"), attr.get("gameMode", "").upper())
+                            m_type = attr.get("matchType", "official")
+                            m_type_str = "Ранговий" if m_type == "competitive" else "Звичайний"
                             
-                            # Пошук статистики гравця в матчі
                             m_stats = None
                             for inc in m_data.get("included", []):
                                 if inc["type"] == 'participant' and inc.get("attributes", {}).get("stats", {}).get("playerId") == player["id"]:
@@ -177,25 +263,25 @@ class PubgCog(commands.Cog):
                                 m_place = m_stats.get("winPlace")
                                 m_kills = m_stats.get("kills")
                                 m_dmg = round(m_stats.get("damageDealt", 0))
-                                
                                 emoji = "🏆" if m_place == 1 else "💀"
-                                embed.add_field(
-                                    name="🕒 Останній матч", 
-                                    value=(f"**Режим:** `{m_mode}`\n"
-                                           f"**Місце:** {emoji} `{m_place}`\n"
-                                           f"**Вбивства:** `💀 {m_kills}`\n"
-                                           f"**Шкода:** `🎯 {m_dmg}`"), 
-                                    inline=False
-                                )
+                                
+                                last_match_field = {
+                                    "name": "🕒 Останній матч",
+                                    "value": (f"**Тип:** `{m_type_str}` | **Режим:** `{m_mode}`\n"
+                                             f"**Місце:** {emoji} `{m_place}`\n"
+                                             f"**Вбивства:** `💀 {m_kills}` | **Шкода:** `🎯 {m_dmg}`")
+                                }
                     
                     dt = datetime.fromisoformat(last_match_date.replace('Z', '+00:00'))
-                    ts = int(dt.timestamp())
-                    embed.set_footer(text=f"Остання гра була {dt.strftime('%d.%m.%Y %H:%M')} (UTC)")
+                    footer_text = f"Остання гра була {dt.strftime('%d.%m.%Y %H:%M')} (UTC)"
                 except Exception as e:
                     print(f"Error parsing last match: {e}")
 
+            view = StatsView(nickname, player["id"], lifetime_stats, ranked_stats, last_match_field, footer_text)
+            embed = view.create_embed("normal") # Починаємо зі звичайної статистики
+            
             cooldowns[user_id] = int(time.time() * 1000)
-            await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=embed, view=view)
             
         except Exception as e:
             print(f"Помилка p_stats: {e}")
