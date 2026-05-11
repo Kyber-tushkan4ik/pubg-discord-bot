@@ -242,6 +242,28 @@ async def get_match_telemetry(telemetry_url: str):
             if response.status == 200:
                 return await response.json()
             raise Exception(f"Telemetry fetch failed: {response.status} {response.reason}")
+
+async def get_clan(clan_id: str):
+    """Отримує дані клану за його ID."""
+    url = f"{BASE_URL}/clans/{clan_id}"
+    try:
+        data = await fetch(url)
+        if data and "data" in data:
+            return data["data"]
+        return None
     except Exception as e:
-        print(f"Error fetching telemetry: {e}")
+        print(f"Error fetching clan '{clan_id}': {e}")
+        return None
+
+async def search_clan(clan_name: str):
+    """Шукає клан за його назвою (точним збігом)."""
+    # Шард steam вимагає точну назву для фільтрації
+    url = f"{BASE_URL}/clans?filter[clanName]={clan_name}"
+    try:
+        data = await fetch(url)
+        if data and "data" in data and len(data["data"]) > 0:
+            return data["data"][0]
+        return None
+    except Exception as e:
+        print(f"Error searching clan '{clan_name}': {e}")
         return None

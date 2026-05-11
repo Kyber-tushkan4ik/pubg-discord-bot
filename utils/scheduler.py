@@ -10,7 +10,7 @@ from .data_handler import (
     get_data, save_data, mark_dirty, get_settings, save_settings, 
     is_match_reported, mark_match_reported, get_achievement_stats, clear_achievements
 )
-from .pubg_api import get_player, get_player_season_stats, get_latest_match_date, get_match, get_players_batch
+from .pubg_api import get_player, get_player_season_stats, get_latest_match_date, get_match, get_players_batch, get_clan
 from .helpers import create_log, ms_to_readable, translate_map, cleanup_old_assets
 from .achievements import check_achievements, ACHIEVEMENTS
 from .records import check_records
@@ -77,6 +77,7 @@ def init_scheduler(client: discord.Client):
 
         create_log("[SCHEDULER] Запуск щоденних завдань...")
         await check_inactivity(client)
+        await sync_clan_members(client)
         
         # Щотижневий звіт та скидання статистики (понеділок)
         if time.localtime().tm_wday == 0:
@@ -728,3 +729,69 @@ async def process_single_player_stats_and_ranks(bot, key, p, pubg_data, debug_ch
     except Exception as e:
         create_log(f"[ERROR SINGLE STATS] {p_nickname}: {e}")
         if debug_channel: await debug_channel.send(f"❌ Помилка оновлення рангів: {e}")
+
+async def sync_clan_members(client):
+    """Автоматично синхронізує учасників клану з PUBG API."""
+    settings = get_settings()
+    clan_id = settings.get("clanId")
+    if not clan_id:
+        return
+        
+    create_log(f"[SCHEDULER] Синхронізація учасників клану (ID: {clan_id})...")
+    
+    try:
+        clan_info = await get_clan(clan_id)
+        if not clan_info:
+            return
+            
+        members = clan_info.get("relationships", {}).get("clanMembers", {}).get("data", [])
+        if not members:
+            return
+            
+        account_ids = [m["id"] for m in members]
+        user_data = get_data()
+        added_count = 0
+        
+        # Пакетна обробка по 10 штук
+        for i in range(0, len(account_ids), 10):
+            batch_ids = account_ids[i:i+10]
+            ids_str = ",".join(batch_ids)
+            url = f"https://api.pubg.com/shards/steam/players?filter[playerIds]={ids_str}"
+            
+            from .pubg_api import fetch
+            players_data = await fetch(url)
+            
+            if players_data and "data" in players_data:
+                for p_api in players_data["data"]:
+                    p_nick = p_api["attributes"]["name"]
+                    p_id = p_api["id"]
+                    
+                    exists = False
+                    for key, val in user_data.items():
+                        if val.get("pubgNickname") == p_nick:
+                            exists = True
+                            break
+                    
+                    if not exists:
+                        new_key = f"ext_{p_id}"
+                        # Шукаємо guildId в налаштуваннях або беремо перший доступний сервер бота
+                        g_id = settings.get("guildId")
+                        if not g_id and client.guilds:
+                            g_id = str(client.guilds[0].id)
+                            
+                        user_data[new_key] = {
+                            "pubgNickname": p_nick,
+                            "isExternal": True,
+                            "guildId": g_id,
+                            "username": p_nick,
+                            "addedViaClanSync": True
+                        }
+                        mark_dirty(new_key)
+                        added_count += 1
+        
+        if added_count > 0:
+            await save_data()
+            create_log(f"[SCHEDULER] Клан синхронізовано. Додано {added_count} нових гравців.")
+            
+    except Exception as e:
+        create_log(f"[ERROR CLAN SYNC] {e}")

@@ -12,7 +12,8 @@ from datetime import datetime, timedelta
 from utils.data_handler import get_data, get_settings
 from utils.pubg_api import (
     get_player, get_player_season_stats, get_matches, 
-    get_latest_match_date, get_match, get_player_ranked_stats, get_current_season_id
+    get_latest_match_date, get_match, get_player_ranked_stats, get_current_season_id,
+    get_clan, search_clan
 )
 from utils.helpers import find_record, translate_map
 
@@ -754,7 +755,133 @@ class PubgCog(commands.Cog):
     async def clan_leaderboard(self, interaction: discord.Interaction):
         view = LeaderboardView()
         embed = view.create_embed("weekly")
-        await interaction.response.send_message(embed=embed, view=view)
+
+    @app_commands.command(name="clan_set", description="Встановити клан для автоматичного відстеження (Admin only)")
+    @app_commands.describe(clan_name="Назва клану (точно як у грі)")
+    async def clan_set(self, interaction: discord.Interaction, clan_name: str):
+        # Перевірка прав (тільки адміни з конфігу)
+        is_admin = False
+        if interaction.guild:
+            admin_roles = CONFIG.get("ROLES_ADMIN", [])
+            is_admin = any(r.name in admin_roles for r in interaction.user.roles)
+        
+        if not is_admin and interaction.user.id != interaction.guild.owner_id:
+            await interaction.response.send_message("❌ У вас немає прав для використання цієї команди.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            clan_data = await search_clan(clan_name)
+            if not clan_data:
+                await interaction.followup.send(f"❌ Клан з назвою **{clan_name}** не знайдено в PUBG API. Перевірте правильність написання.")
+                return
+            
+            clan_id = clan_data["id"]
+            clan_tag = clan_data.get("attributes", {}).get("tag", "")
+            
+            from utils.data_handler import get_settings, save_settings
+            settings = get_settings()
+            settings["clanId"] = clan_id
+            settings["clanName"] = clan_name
+            settings["clanTag"] = clan_tag
+            await save_settings()
+            
+            await interaction.followup.send(f"✅ Клан **[{clan_tag}] {clan_name}** встановлено для відстеження.\nID: `{clan_id}`\n\nТепер ви можете запустити синхронізацію командою `/clan_sync`.")
+            
+        except Exception as e:
+            print(f"Error in clan_set: {e}")
+            await interaction.followup.send(f"❌ Сталася помилка: {e}")
+
+    @app_commands.command(name="clan_sync", description="Синхронізувати список учасників клану з PUBG API")
+    async def clan_sync(self, interaction: discord.Interaction):
+        # Перевірка прав
+        is_admin = False
+        if interaction.guild:
+            admin_roles = CONFIG.get("ROLES_ADMIN", [])
+            is_admin = any(r.name in admin_roles for r in interaction.user.roles)
+        
+        if not is_admin:
+            await interaction.response.send_message("❌ У вас немає прав для використання цієї команди.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        
+        from utils.data_handler import get_settings, get_data, save_data, mark_dirty
+        settings = get_settings()
+        clan_id = settings.get("clanId")
+        
+        if not clan_id:
+            await interaction.followup.send("❌ Клан не встановлено. Використайте спочатку `/clan_set`.")
+            return
+            
+        try:
+            clan_info = await get_clan(clan_id)
+            if not clan_info:
+                await interaction.followup.send("❌ Не вдалося отримати дані клану з API.")
+                return
+            
+            members = clan_info.get("relationships", {}).get("clanMembers", {}).get("data", [])
+            if not members:
+                await interaction.followup.send("❌ У клані не знайдено учасників (або API їх не повернув).")
+                return
+            
+            # Отримуємо ID всіх учасників
+            account_ids = [m["id"] for m in members]
+            
+            # PUBG API дозволяє отримувати гравців по ID тільки по 10 штук або через /players?filter[playerIds]
+            # Але в нашому випадку простіше за нікнеймами? 
+            # Насправді у нас вже є account IDs.
+            
+            user_data = get_data()
+            added_count = 0
+            
+            # Для кожного учасника клану перевіряємо чи він є в базі
+            # Тут складність у тому, що ми маємо accountId, а в базі шукаємо за userId-guildId
+            # Нам потрібно отримати нікнейми цих гравців
+            
+            await interaction.followup.send(f"⏳ Починаю синхронізацію {len(account_ids)} учасників...")
+            
+            # Пакетна обробка по 10 штук
+            for i in range(0, len(account_ids), 10):
+                batch_ids = account_ids[i:i+10]
+                ids_str = ",".join(batch_ids)
+                url = f"https://api.pubg.com/shards/steam/players?filter[playerIds]={ids_str}"
+                
+                from utils.pubg_api import fetch
+                players_data = await fetch(url)
+                
+                if players_data and "data" in players_data:
+                    for p_api in players_data["data"]:
+                        p_nick = p_api["attributes"]["name"]
+                        p_id = p_api["id"]
+                        
+                        # Перевіряємо чи є такий гравець за нікнеймом
+                        exists = False
+                        for key, val in user_data.items():
+                            if val.get("pubgNickname") == p_nick:
+                                exists = True
+                                break
+                        
+                        if not exists:
+                            # Додаємо як зовнішнього гравця
+                            new_key = f"ext_{p_id}"
+                            user_data[new_key] = {
+                                "pubgNickname": p_nick,
+                                "isExternal": True,
+                                "guildId": str(interaction.guild.id) if interaction.guild else None,
+                                "username": p_nick,
+                                "addedViaClanSync": True
+                            }
+                            mark_dirty(new_key)
+                            added_count += 1
+            
+            await save_data()
+            await interaction.followup.send(f"✅ Синхронізацію завершено!\nЗнайдено учасників: {len(account_ids)}\nДодано нових для відстеження: {added_count}")
+            
+        except Exception as e:
+            print(f"Error in clan_sync: {e}")
+            await interaction.followup.send(f"❌ Сталася помилка: {e}")
 
 async def setup(bot):
     await bot.add_cog(PubgCog(bot))
