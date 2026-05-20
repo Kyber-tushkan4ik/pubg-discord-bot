@@ -255,30 +255,142 @@ async def send_monthly_report(client):
     await report_ch.send(embed=embed)
 
 async def check_inactivity(client):
+    """Перевіряє неактивність гравців та надсилає звіт власнику."""
+    create_log("[INACTIVITY] Запуск перевірки неактивності гравців...")
+    
     user_data = get_data()
     players = [x for x in user_data.values() if x.get("pubgNickname")]
-    
-    for i in range(0, len(players), 10):
-        batch = players[i:i+10]
-        nicknames = [p["pubgNickname"] for p in batch]
+    if not players:
+        create_log("[INACTIVITY] У базі немає гравців для перевірки.")
+        return
         
-        async def batch_task(nicks=nicknames, b=batch):
-            pubg_players = await get_players_batch(nicks)
-            for pubg_data in pubg_players:
-                try:
-                    p_nick_low = pubg_data["attributes"]["name"].lower()
-                    player = next((p for p in b if p["pubgNickname"].lower() == p_nick_low), None)
-                    if not player: continue
+    inactive_15 = [] # 15-19 days
+    inactive_20 = [] # 20+ days
+    
+    players_to_fetch = []
+    
+    # 1. Спершу перевіряємо тих, у кого вже є збережена дата останньої гри
+    for p in players:
+        last_date = p.get("lastMatchDate")
+        if last_date:
+            try:
+                last_dt = datetime.fromisoformat(last_date.replace('Z', '+00:00'))
+                inactive_days = (datetime.now(timezone.utc) - last_dt).days
+                if inactive_days >= 20:
+                    inactive_20.append((p, inactive_days))
+                elif inactive_days >= 15:
+                    inactive_15.append((p, inactive_days))
+            except Exception as e:
+                create_log(f"[INACTIVITY ERROR PARSING DATE] {p.get('pubgNickname')}: {e}")
+                players_to_fetch.append(p)
+        else:
+            players_to_fetch.append(p)
+            
+    # 2. Якщо є гравці без збереженої дати, робимо запити до API
+    if players_to_fetch:
+        create_log(f"[INACTIVITY] Потрібно перевірити через API: {len(players_to_fetch)} гравців.")
+        
+        # Обробляємо пакетами по 10
+        for i in range(0, len(players_to_fetch), 10):
+            batch = players_to_fetch[i:i+10]
+            nicks = [p["pubgNickname"] for p in batch]
+            
+            try:
+                pubg_players = await get_players_batch(nicks)
+                
+                for pubg_data in pubg_players:
+                    try:
+                        p_nick_low = pubg_data["attributes"]["name"].lower()
+                        p_entry = next((p for p in batch if p["pubgNickname"].lower() == p_nick_low), None)
+                        if not p_entry:
+                            continue
+                            
+                        last_date = await get_latest_match_date(pubg_data)
+                        if not last_date:
+                            continue
+                            
+                        # Зберігаємо в базу даних для майбутнього використання
+                        for k, v in user_data.items():
+                            if v.get("pubgNickname", "").lower() == p_nick_low:
+                                v["lastMatchDate"] = last_date
+                                mark_dirty(k)
+                                break
+                                
+                        last_dt = datetime.fromisoformat(last_date.replace('Z', '+00:00'))
+                        inactive_days = (datetime.now(timezone.utc) - last_dt).days
+                        
+                        if inactive_days >= 20:
+                            inactive_20.append((p_entry, inactive_days))
+                        elif inactive_days >= 15:
+                            inactive_15.append((p_entry, inactive_days))
+                            
+                    except Exception as e:
+                        create_log(f"[INACTIVITY ERROR PLAYER] {pubg_data.get('id')}: {e}")
+                        
+                # Зберігаємо базу даних після кожного пакету
+                await save_data()
+                
+                # Чекаємо трохи перед наступним пакетом, щоб не перевантажувати API
+                if i + 10 < len(players_to_fetch):
+                    await asyncio.sleep(15.0)
                     
-                    last_date = await get_latest_match_date(pubg_data)
-                    if not last_date: continue
-                    last_dt = datetime.fromisoformat(last_date.replace('Z', '+00:00'))
-                    inactive_days = (datetime.now(timezone.utc) - last_dt).days
-                    if inactive_days >= CONFIG.get("INACTIVITY_DAYS_LIMIT", 14):
-                        create_log(f"[INACTIVE] {player['pubgNickname']} не активний {inactive_days} дн.")
-                except Exception as e:
-                    create_log(f"[ERROR INACTIVITY] {e}")
-        add_to_queue(batch_task)
+            except Exception as e:
+                create_log(f"[INACTIVITY ERROR BATCH] {e}")
+                await asyncio.sleep(15.0)
+                
+    # 3. Формуємо звіт та надсилаємо власнику
+    owner_id = 776154533742641174
+    try:
+        owner = await client.fetch_user(owner_id)
+        if owner:
+            if inactive_15 or inactive_20:
+                embed = discord.Embed(
+                    title="💤 Звіт про неактивність гравців клану",
+                    description="Наступні гравці не з'являлися в грі тривалий час. Можливо, їх варто перевірити або виключити з клану.",
+                    color=0xE74C3C,
+                    timestamp=datetime.now()
+                )
+                
+                # Форматуємо список 20+ днів
+                if inactive_20:
+                    list_20 = []
+                    for p, days in sorted(inactive_20, key=lambda x: x[1], reverse=True):
+                        if p.get("isExternal") or not p.get("userId"):
+                            mention = f"**{p['pubgNickname']}** (External)"
+                        else:
+                            mention = f"**{p['pubgNickname']}** (<@{p['userId']}>)"
+                        list_20.append(f"• {mention} — відсутній **{days}** днів")
+                        
+                    embed.add_field(
+                        name=f"🔴 Неактивні 20 днів або більше ({len(inactive_20)})",
+                        value="\n".join(list_20[:25]) + ("\n...та інші" if len(list_20) > 25 else ""),
+                        inline=False
+                    )
+                    
+                # Форматуємо список 15-19 днів
+                if inactive_15:
+                    list_15 = []
+                    for p, days in sorted(inactive_15, key=lambda x: x[1], reverse=True):
+                        if p.get("isExternal") or not p.get("userId"):
+                            mention = f"**{p['pubgNickname']}** (External)"
+                        else:
+                            mention = f"**{p['pubgNickname']}** (<@{p['userId']}>)"
+                        list_15.append(f"• {mention} — відсутній **{days}** днів")
+                        
+                    embed.add_field(
+                        name=f"🟡 Неактивні 15-19 днів ({len(inactive_15)})",
+                        value="\n".join(list_15[:25]) + ("\n...та інші" if len(list_15) > 25 else ""),
+                        inline=False
+                    )
+                    
+                await owner.send(embed=embed)
+                create_log(f"[INACTIVITY] Звіт надіслано власнику (20+ днів: {len(inactive_20)}, 15-19 днів: {len(inactive_15)})")
+            else:
+                create_log("[INACTIVITY] Усі гравці активні (немає тих, хто не грав 15+ днів).")
+        else:
+            create_log("[INACTIVITY ERROR] Не вдалося знайти власника за ID для надсилання звіту.")
+    except Exception as e:
+        create_log(f"[INACTIVITY ERROR SENDING REPORT] {e}")
 
 _first_stats_update_done = False
 
@@ -487,10 +599,14 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                 if debug_channel: await debug_channel.send(f"⚠️ Не вдалося отримати деталі матчу `{mid}`.")
                 continue
             
+            try:
+                c_at_str = match["data"]["attributes"]["createdAt"]
+            except:
+                c_at_str = None
+            
             # Перевірка свіжості матчу (тільки якщо не дебаг)
-            if not debug_channel:
+            if not debug_channel and c_at_str:
                 try:
-                    c_at_str = match["data"]["attributes"]["createdAt"]
                     c_at = datetime.fromisoformat(c_at_str.replace('Z', '+00:00'))
                     if (datetime.now(timezone.utc) - c_at).total_seconds() > 7200: 
                         continue
@@ -504,6 +620,9 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
             
             if stats:
                 processed_count += 1
+                if c_at_str:
+                    p["lastMatchDate"] = c_at_str
+                    mark_dirty(key)
                 if debug_channel:
                     msg = (f"🎮 **Знайдено матч** `{mid}`:\n"
                            f"• Місце: **{stats.get('winPlace')}**\n"
