@@ -36,7 +36,7 @@ class AnalyticsCog(commands.Cog):
         if not user:
             return
 
-        top_data = get_top_activity()
+        top_data = await get_top_activity()
         if not top_data:
             # Зберігаємо дату навіть якщо немає даних, щоб не спамило
             settings["lastAnalyticsDate"] = today.strftime("%Y-%m-%d")
@@ -77,7 +77,7 @@ class AnalyticsCog(commands.Cog):
             create_log(f"[ANALYTICS ERROR] Failed to send report: {e}")
 
         # Скидаємо статистику
-        reset_weekly_activity()
+        await reset_weekly_activity()
         
         # Зберігаємо дату
         settings["lastAnalyticsDate"] = today.strftime("%Y-%m-%d")

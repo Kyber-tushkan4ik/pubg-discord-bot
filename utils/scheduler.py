@@ -280,8 +280,15 @@ async def check_inactivity(client):
                     create_log(f"[ERROR INACTIVITY] {e}")
         add_to_queue(batch_task)
 
-async def update_stats_and_ranks(bot):
-    create_log('[SCHEDULER] Оновлення статики та рангів...')
+_first_stats_update_done = False
+
+async def update_stats_and_ranks(bot, is_quiet=None):
+    global _first_stats_update_done
+    if is_quiet is None:
+        is_quiet = not _first_stats_update_done
+    _first_stats_update_done = True
+
+    create_log(f"[SCHEDULER] Оновлення статики та рангів {'(ТИХИЙ РЕЖИМ)' if is_quiet else ''}...")
     user_data = get_data()
     players_list = [(k, v) for k, v in user_data.items() if v.get("pubgNickname")]
     
@@ -289,7 +296,7 @@ async def update_stats_and_ranks(bot):
         batch = players_list[i:i+10]
         nicknames = [p[1]["pubgNickname"] for p in batch]
         
-        async def batch_task(nicks=nicknames, b=batch):
+        async def batch_task(nicks=nicknames, b=batch, q=is_quiet):
             pubg_players = await get_players_batch(nicks)
             for pubg_data in pubg_players:
                 try:
@@ -298,12 +305,12 @@ async def update_stats_and_ranks(bot):
                     if not entry: continue
                     key, p = entry
                     
-                    await process_single_player_stats_and_ranks(bot, key, p, pubg_data)
+                    await process_single_player_stats_and_ranks(bot, key, p, pubg_data, is_quiet=q)
                 except Exception as e:
                     create_log(f"[ERROR STATS BATCH] {e}")
         add_to_queue(batch_task)
 
-async def check_special_roles(bot, guild, member, stats, nickname, debug_channel=None):
+async def check_special_roles(bot, guild, member, stats, nickname, is_quiet=False, debug_channel=None):
     special_roles = CONFIG.get("SPECIAL_ROLES", {})
     earned_roles = []
     
@@ -357,16 +364,17 @@ async def check_special_roles(bot, guild, member, stats, nickname, debug_channel
         await send_log(bot, f"🏆 Гравцю **{nickname}** видано ролі: {granted_str}")
         if debug_channel: await debug_channel.send(f"🎖️ **Видано спецролі**: {granted_str}")
         
-        bot_settings = get_settings()
-        rep_ch_id = bot_settings.get("reportsChannelId") or CONFIG.get("WIN_NOTIF_CHANNEL_ID")
-        rep_ch = bot.get_channel(int(rep_ch_id)) if rep_ch_id else None
-        if rep_ch:
-            embed = discord.Embed(
-                title="🏆 Нові Спеціальні Ролі!",
-                description=f"Гравець **{nickname}** заслужив нові ролі: {granted_str}",
-                color=0xf1c40f
-            )
-            await rep_ch.send(embed=embed)
+        if not is_quiet:
+            bot_settings = get_settings()
+            rep_ch_id = bot_settings.get("reportsChannelId") or CONFIG.get("WIN_NOTIF_CHANNEL_ID")
+            rep_ch = bot.get_channel(int(rep_ch_id)) if rep_ch_id else None
+            if rep_ch:
+                embed = discord.Embed(
+                    title="🏆 Нові Спеціальні Ролі!",
+                    description=f"Гравець **{nickname}** заслужив нові ролі: {granted_str}",
+                    color=0xf1c40f
+                )
+                await rep_ch.send(embed=embed)
             
     # Автоматичне видалення старих (замінених) ролей
     deprecated = {
@@ -601,7 +609,7 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
     await save_data()
     return processed_count
 
-async def process_single_player_stats_and_ranks(bot, key, p, pubg_data, debug_channel=None):
+async def process_single_player_stats_and_ranks(bot, key, p, pubg_data, is_quiet=False, debug_channel=None):
     """
     Оновлює статистику (Lifetime) та ранги для одного гравця.
     """
@@ -712,20 +720,21 @@ async def process_single_player_stats_and_ranks(bot, key, p, pubg_data, debug_ch
             create_log(f"[RANK] {p_nickname} -> {target_role_name}")
             if debug_channel: await debug_channel.send(f"🎖️ **Оновлено ранг**: {target_role_name}")
             
-            bot_settings = get_settings()
-            rep_ch_id = bot_settings.get("reportsChannelId") or CONFIG.get("WIN_NOTIF_CHANNEL_ID")
-            rep_ch = bot.get_channel(int(rep_ch_id)) if rep_ch_id else None
-            if rep_ch:
-                embed = discord.Embed(
-                    title="🎖️ Новий Ранг!",
-                    description=f"Гравець **{p_nickname}** отримав новий ранг: **{target_role_name}**!\nK/D: **{kd}**",
-                    color=discord.Color(int(target_color, 16))
-                )
-                await rep_ch.send(embed=embed)
+            if not is_quiet:
+                bot_settings = get_settings()
+                rep_ch_id = bot_settings.get("reportsChannelId") or CONFIG.get("WIN_NOTIF_CHANNEL_ID")
+                rep_ch = bot.get_channel(int(rep_ch_id)) if rep_ch_id else None
+                if rep_ch:
+                    embed = discord.Embed(
+                        title="🎖️ Новий Ранг!",
+                        description=f"Гравець **{p_nickname}** отримав новий ранг: **{target_role_name}**!\nK/D: **{kd}**",
+                        color=discord.Color(int(target_color, 16))
+                    )
+                    await rep_ch.send(embed=embed)
         else:
             if debug_channel: await debug_channel.send(f"🎖️ Ранг вже актуальний: {target_role_name}")
 
-        await check_special_roles(bot, guild, member, squad_stats, p_nickname, debug_channel=debug_channel)
+        await check_special_roles(bot, guild, member, squad_stats, p_nickname, is_quiet=is_quiet, debug_channel=debug_channel)
     except Exception as e:
         create_log(f"[ERROR SINGLE STATS] {p_nickname}: {e}")
         if debug_channel: await debug_channel.send(f"❌ Помилка оновлення рангів: {e}")
