@@ -740,7 +740,7 @@ async def process_single_player_stats_and_ranks(bot, key, p, pubg_data, is_quiet
         if debug_channel: await debug_channel.send(f"❌ Помилка оновлення рангів: {e}")
 
 async def sync_clan_members(client):
-    """Автоматично синхронізує учасників клану з PUBG API."""
+    """Автоматично синхронізує учасників клану з PUBG API через сканування матчів."""
     settings = get_settings()
     clan_id = settings.get("clanId")
     if not clan_id:
@@ -749,31 +749,75 @@ async def sync_clan_members(client):
     create_log(f"[SCHEDULER] Синхронізація учасників клану (ID: {clan_id})...")
     
     try:
+        # Спочатку оновимо дані клану (назву та тег) з API про всяк випадок
         clan_info = await get_clan(clan_id)
-        if not clan_info:
-            return
-            
-        members = clan_info.get("relationships", {}).get("clanMembers", {}).get("data", [])
-        if not members:
-            return
-            
-        account_ids = [m["id"] for m in members]
-        user_data = get_data()
-        added_count = 0
+        if clan_info and "data" in clan_info:
+            clan_name = clan_info["data"].get("attributes", {}).get("clanName", "Unknown")
+            clan_tag = clan_info["data"].get("attributes", {}).get("clanTag", "")
+            if clan_name != settings.get("clanName") or clan_tag != settings.get("clanTag"):
+                settings["clanName"] = clan_name
+                settings["clanTag"] = clan_tag
+                await save_settings()
+                create_log(f"[SCHEDULER] Оновлено інформацію клану: [{clan_tag}] {clan_name}")
         
-        # Пакетна обробка по 10 штук
-        for i in range(0, len(account_ids), 10):
-            batch_ids = account_ids[i:i+10]
-            ids_str = ",".join(batch_ids)
-            url = f"https://api.pubg.com/shards/steam/players?filter[playerIds]={ids_str}"
+        user_data = get_data()
+        clan_players = [v.get("pubgNickname") for v in user_data.values() if v.get("pubgNickname")]
+        if not clan_players:
+            return
             
-            from .pubg_api import fetch
-            players_data = await fetch(url)
-            
-            if players_data and "data" in players_data:
-                for p_api in players_data["data"]:
-                    p_nick = p_api["attributes"]["name"]
-                    p_id = p_api["id"]
+        discovered_nicks = set()
+        
+        # Скануємо до 15 найбільш активних або перших гравців
+        players_to_check = clan_players[:15]
+        
+        for i in range(0, len(players_to_check), 10):
+            batch_nicks = players_to_check[i:i+10]
+            pubg_players = await get_players_batch(batch_nicks)
+            for p_data in pubg_players:
+                match_ids = [m["id"] for m in p_data.get("relationships", {}).get("matches", {}).get("data", [])[:3]]
+                for mid in match_ids:
+                    try:
+                        match_details = await get_match(mid)
+                        if not match_details or "included" not in match_details:
+                            continue
+                        
+                        p_id = p_data["id"]
+                        my_participant_id = None
+                        for inc in match_details["included"]:
+                            if inc["type"] == "participant" and inc.get("attributes", {}).get("stats", {}).get("playerId") == p_id:
+                                my_participant_id = inc["id"]
+                                break
+                        
+                        if not my_participant_id:
+                            continue
+                        
+                        my_roster_participants = []
+                        for inc in match_details["included"]:
+                            if inc["type"] == "roster":
+                                participants = inc.get("relationships", {}).get("participants", {}).get("data", [])
+                                if any(p["id"] == my_participant_id for p in participants):
+                                    my_roster_participants = [p["id"] for p in participants]
+                                    break
+                        
+                        for inc in match_details["included"]:
+                            if inc["type"] == "participant" and inc["id"] in my_roster_participants:
+                                stats = inc.get("attributes", {}).get("stats", {})
+                                tp_name = stats.get("name")
+                                if tp_name and tp_name.lower() not in [x.lower() for x in clan_players] and tp_name.lower() not in [x.lower() for x in discovered_nicks]:
+                                    discovered_nicks.add(tp_name)
+                    except Exception as e:
+                        create_log(f"[ERROR SCHEDULER SCAN MATCH] {e}")
+                        
+        added_count = 0
+        discovered_list = list(discovered_nicks)
+        for i in range(0, len(discovered_list), 10):
+            batch = discovered_list[i:i+10]
+            players_profiles = await get_players_batch(batch)
+            for p_profile in players_profiles:
+                p_clan_id = p_profile.get("attributes", {}).get("clanId")
+                if p_clan_id == clan_id:
+                    p_nick = p_profile["attributes"]["name"]
+                    p_id = p_profile["id"]
                     
                     exists = False
                     for key, val in user_data.items():
@@ -783,7 +827,6 @@ async def sync_clan_members(client):
                     
                     if not exists:
                         new_key = f"ext_{p_id}"
-                        # Шукаємо guildId в налаштуваннях або беремо перший доступний сервер бота
                         g_id = settings.get("guildId")
                         if not g_id and client.guilds:
                             g_id = str(client.guilds[0].id)
@@ -797,10 +840,10 @@ async def sync_clan_members(client):
                         }
                         mark_dirty(new_key)
                         added_count += 1
-        
+                        
         if added_count > 0:
             await save_data()
-            create_log(f"[SCHEDULER] Клан синхронізовано. Додано {added_count} нових гравців.")
+            create_log(f"[SCHEDULER] Клан синхронізовано. Додано {added_count} нових гравців через аналіз матчів.")
             
     except Exception as e:
         create_log(f"[ERROR CLAN SYNC] {e}")
