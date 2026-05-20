@@ -242,6 +242,9 @@ async def get_match_telemetry(telemetry_url: str):
             if response.status == 200:
                 return await response.json()
             raise Exception(f"Telemetry fetch failed: {response.status} {response.reason}")
+    except Exception as e:
+        print(f"Error fetching telemetry: {e}")
+        return None
 
 async def get_clan(clan_id: str):
     """Отримує дані клану за його ID."""
