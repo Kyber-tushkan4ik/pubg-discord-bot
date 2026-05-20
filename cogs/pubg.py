@@ -821,7 +821,7 @@ class PubgCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         
-        from utils.data_handler import get_settings, get_data, save_data, mark_dirty
+        from utils.data_handler import get_settings, save_settings, get_data, save_data, mark_dirty
         settings = get_settings()
         clan_id = settings.get("clanId")
         
