@@ -791,8 +791,8 @@ class PubgCog(commands.Cog):
                 await interaction.followup.send(f"❌ Не вдалося отримати дані клану за ID: `{clan_id}`.")
                 return
             
-            clan_name = clan_data.get("attributes", {}).get("name", "Unknown")
-            clan_tag = clan_data.get("attributes", {}).get("tag", "")
+            clan_name = clan_data.get("attributes", {}).get("clanName", "Unknown")
+            clan_tag = clan_data.get("attributes", {}).get("clanTag", "")
             
             from utils.data_handler import get_settings, save_settings
             settings = get_settings()
@@ -832,12 +832,12 @@ class PubgCog(commands.Cog):
         try:
             # Оновлюємо інформацію про клан
             clan_info = await get_clan(clan_id)
-            if not clan_info or "data" not in clan_info:
+            if not clan_info:
                 await interaction.followup.send("❌ Не вдалося отримати дані клану з PUBG API.")
                 return
                 
-            clan_name = clan_info["data"].get("attributes", {}).get("clanName", "Unknown")
-            clan_tag = clan_info["data"].get("attributes", {}).get("clanTag", "")
+            clan_name = clan_info.get("attributes", {}).get("clanName", "Unknown")
+            clan_tag = clan_info.get("attributes", {}).get("clanTag", "")
             
             settings["clanName"] = clan_name
             settings["clanTag"] = clan_tag

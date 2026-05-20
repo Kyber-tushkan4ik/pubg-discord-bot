@@ -870,9 +870,9 @@ async def sync_clan_members(client):
     try:
         # Спочатку оновимо дані клану (назву та тег) з API про всяк випадок
         clan_info = await get_clan(clan_id)
-        if clan_info and "data" in clan_info:
-            clan_name = clan_info["data"].get("attributes", {}).get("clanName", "Unknown")
-            clan_tag = clan_info["data"].get("attributes", {}).get("clanTag", "")
+        if clan_info:
+            clan_name = clan_info.get("attributes", {}).get("clanName", "Unknown")
+            clan_tag = clan_info.get("attributes", {}).get("clanTag", "")
             if clan_name != settings.get("clanName") or clan_tag != settings.get("clanTag"):
                 settings["clanName"] = clan_name
                 settings["clanTag"] = clan_tag
