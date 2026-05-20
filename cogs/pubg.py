@@ -11,7 +11,7 @@ import asyncio
 from datetime import datetime, timedelta
 from utils.data_handler import get_data, get_settings
 from utils.pubg_api import (
-    get_player, get_player_season_stats, get_matches, 
+    get_player, get_player_season_stats, get_matches, get_players_batch,
     get_latest_match_date, get_match, get_player_ranked_stats, get_current_season_id,
     get_clan, search_clan
 )
