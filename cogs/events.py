@@ -6,7 +6,7 @@ import json
 import re
 import sqlite3
 
-from utils.data_handler import get_data, save_data, get_settings, increment_playmate_relation, add_balance, add_weekly_voice_stat
+from utils.data_handler import get_data, save_data, get_settings, increment_playmate_relation, add_balance, add_weekly_voice_stat, delete_user_all_data
 from utils.core import handle_success, send_log
 from utils.helpers import create_log, ms_to_readable, get_record_key, find_record
 
@@ -109,6 +109,56 @@ class EventsCog(commands.Cog):
             await member.send(embed=embed)
         except Exception as e:
             create_log(f"[DM FAILED] User {member.name} DMs closed.")
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: discord.Member):
+        if member.bot: return
+        user_id = str(member.id)
+        create_log(f"[LEAVE] {member.name} покинув сервер. Видалення всіх даних...")
+        try:
+            await delete_user_all_data(user_id)
+            create_log(f"[LEAVE] Дані користувача {member.name} (ID: {user_id}) успішно видалено.")
+
+            leave_embed = discord.Embed(
+                title="🚪 Учасник покинув сервер",
+                description=(
+                    f"**{member.name}** (ID: `{user_id}`) покинув сервер.\n"
+                    f"Всі прив'язані дані (PUBG акаунт, статистика, баланс) було **автоматично видалено**."
+                ),
+                color=0xFF4444
+            )
+            leave_embed.set_thumbnail(url=member.display_avatar.url)
+            leave_embed.set_footer(text="Автоматичне очищення даних")
+
+            # 1. Відправляємо в лог-канал сервера
+            log_channel_id = CONFIG.get("LOG_CHANNEL_ID")
+            if log_channel_id:
+                ch = member.guild.get_channel(int(log_channel_id))
+                if ch:
+                    await ch.send(embed=leave_embed)
+
+            # 2. Відправляємо особисте повідомлення власнику бота
+            try:
+                app_info = await self.bot.application_info()
+                owner = app_info.owner
+                dm_embed = discord.Embed(
+                    title="🚪 Хтось покинув сервер",
+                    description=(
+                        f"**Нікнейм:** {member.name}\n"
+                        f"**Discord ID:** `{user_id}`\n"
+                        f"**Сервер:** {member.guild.name}\n\n"
+                        f"✅ Усі дані цього користувача **видалено** з бази даних."
+                    ),
+                    color=0xFF4444
+                )
+                dm_embed.set_thumbnail(url=member.display_avatar.url)
+                dm_embed.set_footer(text="PUBG Bot · Автоматичне очищення")
+                await owner.send(embed=dm_embed)
+            except Exception as dm_err:
+                create_log(f"[LEAVE] Не вдалося надіслати DM власнику: {dm_err}")
+
+        except Exception as e:
+            create_log(f"[LEAVE ERROR] Не вдалося видалити дані {member.name}: {e}")
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):

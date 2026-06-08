@@ -263,6 +263,45 @@ def delete_data_sync(key):
 async def delete_data(key):
     await asyncio.to_thread(delete_data_sync, key)
 
+def delete_user_all_data_sync(user_id: str):
+    """Видаляє всі дані КОНКРЕТНОГО користувача з усіх таблиць бази даних."""
+    uid = str(user_id)
+
+    # Видаляємо з in-memory кешу лише записи цього користувача.
+    # Ключ має формат "userId-guildId" — перевіряємо обидва варіанти:
+    # 1) key == uid (legacy-ключ без гільдії)
+    # 2) key починається з "uid-" (стандартний ключ userId-guildId)
+    keys_to_remove = [
+        k for k in list(user_data.keys())
+        if k == uid or (str(k).startswith(uid + '-') and str(k).split('-')[0] == uid)
+    ]
+    for k in keys_to_remove:
+        del user_data[k]
+        _dirty_keys.discard(k)
+
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        # Кожен DELETE прив'язаний до конкретного userId — видаляємо тільки його
+        cursor.execute("DELETE FROM users WHERE userId = ?", (uid,))
+        cursor.execute("DELETE FROM voice_stats WHERE userId = ?", (uid,))
+        cursor.execute("DELETE FROM achievements WHERE userId = ?", (uid,))
+        cursor.execute(
+            "DELETE FROM playmates WHERE user1_id = ? OR user2_id = ?",
+            (uid, uid)
+        )
+        cursor.execute("DELETE FROM economy WHERE userId = ?", (uid,))
+        cursor.execute("DELETE FROM activity_stats WHERE userId = ?", (uid,))
+        conn.commit()
+        conn.close()
+        print(f"[DataHandler] Видалено всі дані для userId={uid}")
+    except Exception as e:
+        print(f"[DataHandler] Помилка при видаленні даних userId={uid}: {e}")
+
+async def delete_user_all_data(user_id: str):
+    """Асинхронна обгортка для видалення всіх даних конкретного користувача."""
+    await asyncio.to_thread(delete_user_all_data_sync, user_id)
+
 def increment_playmate_relation_sync(u1, u2):
     """Збільшує лічильник спільних ігор для двох користувачів."""
     try:
