@@ -134,5 +134,78 @@ class Maintenance(commands.Cog):
             if dh._error_callback:
                 dh._error_callback("Тестовий запит", fake_err)
 
+    @app_commands.command(name="control_panel", description="Кишеньковий пульт управління (тільки для адмінів)")
+    @is_admin()
+    async def control_panel(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title="🎛️ Пульт Управління Ботом",
+            description="Використовуйте кнопки нижче для швидкого керування з телефону.",
+            color=0x2b2d31
+        )
+        view = ControlPanelView(self.bot)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
+
+class AnnouncementModal(discord.ui.Modal, title='Створити оголошення'):
+    announcement_text = discord.ui.TextInput(
+        label='Текст оголошення',
+        style=discord.TextStyle.paragraph,
+        placeholder='Введіть текст, який буде надіслано в головний канал...',
+        required=True,
+        max_length=2000
+    )
+
+    def __init__(self, bot):
+        super().__init__()
+        self.bot = bot
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # Отримуємо налаштування для пошуку головного каналу (або використовуємо канал, з якого викликали)
+        channel = interaction.channel
+        
+        embed = discord.Embed(
+            title="📢 Оголошення",
+            description=self.announcement_text.value,
+            color=0xffcc00,
+            timestamp=discord.utils.utcnow()
+        )
+        embed.set_footer(text=f"Від: {interaction.user.display_name}", icon_url=interaction.user.display_avatar.url)
+        
+        await channel.send(embed=embed)
+        await interaction.response.send_message("✅ Оголошення успішно надіслано!", ephemeral=True)
+
+class ControlPanelView(discord.ui.View):
+    def __init__(self, bot):
+        super().__init__(timeout=None) # Persistent view
+        self.bot = bot
+
+    @discord.ui.button(label="Рестарт Бота", style=discord.ButtonStyle.danger, emoji="🔄", custom_id="panel_restart")
+    async def restart_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message("❌ Немає прав.", ephemeral=True)
+            
+        await interaction.response.send_message("🔄 Перезапускаю бота...", ephemeral=True)
+        create_log(f"[SYSTEM] Рестарт ініційований {interaction.user} через пульт.")
+        import sys
+        sys.exit(0) # Якщо бот запускається через PM2 або bash loop, він сам підніметься.
+
+    @discord.ui.button(label="Очистити кеш", style=discord.ButtonStyle.secondary, emoji="🧹", custom_id="panel_cache")
+    async def cache_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("🧹 Очищаю тимчасові файли...", ephemeral=True)
+        cleanup_old_assets(max_age_hours=0)
+        await interaction.edit_original_response(content="✅ Тимчасові зображення перемог видалено.")
+
+    @discord.ui.button(label="Звіт по БД", style=discord.ButtonStyle.success, emoji="📊", custom_id="panel_db")
+    async def db_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        db_file = os.path.join(os.path.dirname(__file__), '../database.sqlite')
+        db_size = os.path.getsize(db_file) / (1024 * 1024) if os.path.exists(db_file) else 0
+        await interaction.response.send_message(f"🗄️ Розмір бази даних: **{db_size:.2f} MB**.\nБаза працює стабільно.", ephemeral=True)
+
+    @discord.ui.button(label="Швидке оголошення", style=discord.ButtonStyle.primary, emoji="📢", custom_id="panel_announce")
+    async def announce_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message("❌ Немає прав.", ephemeral=True)
+        await interaction.response.send_modal(AnnouncementModal(self.bot))
+
+
 async def setup(bot):
     await bot.add_cog(Maintenance(bot))

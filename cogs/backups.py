@@ -29,8 +29,8 @@ class BackupsCog(commands.Cog):
         if last_backup_str:
             try:
                 last_date = datetime.datetime.strptime(last_backup_str, "%Y-%m-%d")
-                if (today - last_date).days < 3:
-                    return # Ще не пройшло 3 дні
+                if (today - last_date).days < 1:
+                    return # Ще не пройшло 1 день
             except ValueError:
                 pass
                 
