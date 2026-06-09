@@ -314,8 +314,33 @@ class AdminCog(commands.Cog):
             create_log(f"Error add_external: {e}")
             await interaction.followup.send("Помилка при додаванні гравця.")
 
+    async def pubg_nickname_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        user_data = get_data()
+        choices = []
+        for key, user in user_data.items():
+            nick = user.get("pubgNickname")
+            if nick and current.lower() in nick.lower():
+                choices.append(app_commands.Choice(name=nick, value=nick))
+                if len(choices) >= 25:
+                    break
+        return choices
+
+    async def external_nickname_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        user_data = get_data()
+        choices = []
+        for key, user in user_data.items():
+            is_ext = user.get("isExternal") or (user.get("userId") and str(user.get("userId")).startswith('ext_'))
+            if is_ext:
+                nick = user.get("pubgNickname")
+                if nick and current.lower() in nick.lower():
+                    choices.append(app_commands.Choice(name=nick, value=nick))
+                    if len(choices) >= 25:
+                        break
+        return choices
+
     @app_commands.command(name="remove_external", description="Видалити зовнішнього гравця з бази даних (Адмін)")
     @app_commands.describe(nickname="PUBG нікнейм гравця або ID")
+    @app_commands.autocomplete(nickname=external_nickname_autocomplete)
     @is_admin()
     async def remove_external(self, interaction: discord.Interaction, nickname: str):
         input_str = nickname.strip()
@@ -363,6 +388,7 @@ class AdminCog(commands.Cog):
 
     @app_commands.command(name="force_delete_user", description="Примусово видалити БУДЬ-ЯКОГО гравця з бази (навіть якщо він покинув сервер)")
     @app_commands.describe(identifier="PUBG нікнейм або Discord ID гравця")
+    @app_commands.autocomplete(identifier=pubg_nickname_autocomplete)
     @is_admin()
     async def force_delete_user(self, interaction: discord.Interaction, identifier: str):
         input_str = identifier.strip()

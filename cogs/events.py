@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import time
 import os
 import json
@@ -25,6 +25,20 @@ voice_sessions = {}
 class EventsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.cleanup_voice_sessions.start()
+
+    def cog_unload(self):
+        self.cleanup_voice_sessions.cancel()
+
+    @tasks.loop(hours=24)
+    async def cleanup_voice_sessions(self):
+        now = int(time.time() * 1000)
+        # Очистити сесії, що тривають більше 24 годин (86400000 мс)
+        stuck_users = [uid for uid, join_time in voice_sessions.items() if (now - join_time) > 86400000]
+        for uid in stuck_users:
+            del voice_sessions[uid]
+        if stuck_users:
+            create_log(f"[MEMORY] Очищено {len(stuck_users)} завислих голосових сесій.")
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):

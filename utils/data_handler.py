@@ -16,6 +16,7 @@ _error_callback = None
 def init_db():
     global user_data
     conn = sqlite3.connect(DB_FILE)
+    conn.execute('PRAGMA journal_mode=WAL;') # Увімкнення WAL режиму
     cursor = conn.cursor()
     
     cursor.execute('''
