@@ -34,7 +34,7 @@ class ActivityScanner(commands.Cog):
             status_msg = await interaction.followup.send("⏳ Зчитую текст із зображень...", wait=True)
             
             # Використовуємо Gemini для OCR
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = genai.GenerativeModel('gemini-1.5-flash-latest')
             prompt = "Extract all player names from this image. Return ONLY the names, each on a new line. Only return strings that match a standard PUBG username (letters, numbers, underscores, hyphens, max 16 chars). Exclude any extraneous text or interface elements."
             
             for img_attachment in images:
