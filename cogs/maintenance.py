@@ -1,13 +1,80 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import os
 import shutil
+import datetime
 from utils.helpers import create_log, cleanup_old_assets, is_admin
 
 class Maintenance(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.monthly_clan_roster_check.start()
+
+    def cog_unload(self):
+        self.monthly_clan_roster_check.cancel()
+
+    @tasks.loop(hours=24)
+    async def monthly_clan_roster_check(self):
+        now = datetime.datetime.now()
+        # Перевіряємо, чи сьогодні 1-ше число місяця
+        if now.day != 1:
+            return
+            
+        from utils.data_handler import get_data, get_settings, save_settings
+        settings = get_settings()
+        
+        current_month = f"{now.year}-{now.month}"
+        if settings.get("lastMonthlyRosterCheck") == current_month:
+            return
+            
+        try:
+            user_data = get_data()
+            discord_players = []
+            external_players = []
+            
+            for key, user in user_data.items():
+                if user.get("pubgNickname") and not user.get("untracked"):
+                    is_ext = user.get("isExternal") or (user.get("userId") and str(user.get("userId")).startswith('ext_'))
+                    if is_ext:
+                        external_players.append(f"• {user.get('pubgNickname')} (ID: `{key}`)")
+                    else:
+                        discord_players.append(f"• {user.get('pubgNickname')} (<@{user.get('userId')}>)")
+                        
+            owner = await self.bot.fetch_user(776154533742641174)
+            if not owner:
+                return
+                
+            embed = discord.Embed(
+                title="📅 Щомісячна перевірка складу клану",
+                description=(
+                    "Привіт! Почався новий місяць. Будь ласка, перевір список гравців, за якими бот веде відстеження.\n\n"
+                    "**Чи покинув хтось клан за цей час?**\n"
+                    "Якщо так, використай команду `/force_delete_user` або `/remove_external`, щоб я перестав вести за ними рахунок онлайну та оновлювати статистику."
+                ),
+                color=0x3498db
+            )
+            
+            if discord_players:
+                d_str = "\n".join(discord_players)
+                if len(d_str) > 1024: d_str = d_str[:1000] + "..."
+                embed.add_field(name=f"🎮 Гравці з Discord ({len(discord_players)})", value=d_str, inline=False)
+                
+            if external_players:
+                e_str = "\n".join(external_players)
+                if len(e_str) > 1024: e_str = e_str[:1000] + "..."
+                embed.add_field(name=f"🌐 Зовнішні гравці ({len(external_players)})", value=e_str, inline=False)
+                
+            await owner.send(embed=embed)
+            
+            settings["lastMonthlyRosterCheck"] = current_month
+            await save_settings()
+        except Exception as e:
+            create_log(f"Error in monthly_clan_roster_check: {e}")
+
+    @monthly_clan_roster_check.before_loop
+    async def before_monthly_check(self):
+        await self.bot.wait_until_ready()
 
     @app_commands.command(name="maintenance", description="Обслуговування бота та перевірка ресурсів")
     @app_commands.describe(action="Дія")
