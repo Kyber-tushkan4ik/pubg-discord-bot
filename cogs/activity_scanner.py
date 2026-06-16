@@ -55,9 +55,15 @@ class ActivityScanner(commands.Cog):
             names = list(set(all_names)) # Прибираємо дублікати
             
             if not names:
-                return await status_msg.edit(content="❌ Не вдалося знайти жодного дійсного імені на зображеннях.")
+                try:
+                    return await status_msg.edit(content="❌ Не вдалося знайти жодного дійсного імені на зображеннях.")
+                except discord.HTTPException:
+                    return await interaction.channel.send(f"{interaction.user.mention} ❌ Не вдалося знайти жодного дійсного імені на зображеннях.")
                 
-            await status_msg.edit(content=f"⏳ Знайдено унікальних гравців: {len(names)}. Перевіряю активність (з кешуванням)...")
+            try:
+                await status_msg.edit(content=f"⏳ Знайдено унікальних гравців: {len(names)}. Перевіряю активність (з кешуванням)... Це може зайняти певний час через ліміти API.")
+            except discord.HTTPException:
+                pass # Ігноруємо помилку, якщо токен вже закінчився
             
             user_data = get_data()
             pubg_to_discord = {v.get('pubgNickname', '').lower(): v.get('userId') for k, v in user_data.items() if v.get('pubgNickname')}
@@ -171,10 +177,19 @@ class ActivityScanner(commands.Cog):
             if not linked_report and not unlinked_report:
                 embed.description = "Немає даних для відображення."
                 
-            await status_msg.edit(content=None, embed=embed)
+            try:
+                await status_msg.edit(content=None, embed=embed)
+            except discord.HTTPException as e:
+                if e.code == 50027: # Invalid Webhook Token
+                    await interaction.channel.send(content=f"{interaction.user.mention}, звіт готовий:", embed=embed)
+                else:
+                    await interaction.channel.send(embed=embed)
             
         except Exception as e:
-            await interaction.followup.send(f"❌ Сталася помилка при обробці: {e}")
+            try:
+                await interaction.followup.send(f"❌ Сталася помилка при обробці: {e}")
+            except discord.HTTPException:
+                await interaction.channel.send(f"{interaction.user.mention} ❌ Сталася помилка при обробці: {e}")
 
 async def setup(bot):
     await bot.add_cog(ActivityScanner(bot))
