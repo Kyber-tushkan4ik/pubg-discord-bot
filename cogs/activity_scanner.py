@@ -40,21 +40,45 @@ class ActivityScanner(commands.Cog):
         await self.process_images(interaction, images)
 
     async def check_activity_context(self, interaction: discord.Interaction, message: discord.Message):
-        await interaction.response.defer(ephemeral=False)
+        try:
+            await interaction.response.defer(ephemeral=False)
+        except discord.errors.NotFound:
+            pass # Якщо не встигли за 3 секунди, ігноруємо помилку і відправимо в канал
         
         images = [attachment for attachment in message.attachments if attachment.content_type and attachment.content_type.startswith('image/')]
         
         if not images:
-            return await interaction.followup.send("❌ У цьому повідомленні немає зображень для аналізу.")
+            try:
+                return await interaction.followup.send("❌ У цьому повідомленні немає зображень для аналізу.")
+            except:
+                return await interaction.channel.send(f"{interaction.user.mention} ❌ У цьому повідомленні немає зображень для аналізу.")
             
         await self.process_images(interaction, images)
 
-    async def process_images(self, interaction: discord.Interaction, images: list):
+    @commands.command(name="check", aliases=["check_activity", "аналіз"])
+    async def check_activity_prefix(self, ctx):
+        images = [attachment for attachment in ctx.message.attachments if attachment.content_type and attachment.content_type.startswith('image/')]
+        
+        if not images:
+            return await ctx.send("❌ Будь ласка, прикріпіть фотографії прямо до цього повідомлення (можна кинути групу фото і додати коментар `!check`).")
+            
+        await self.process_images(ctx, images)
+
+    async def process_images(self, context, images: list):
+        is_interaction = isinstance(context, discord.Interaction)
+        user = context.user if is_interaction else context.author
+        channel = context.channel
 
         try:
             all_names = []
             
-            status_msg = await interaction.followup.send("⏳ Зчитую текст із зображень...", wait=True)
+            if is_interaction:
+                try:
+                    status_msg = await context.followup.send("⏳ Зчитую текст із зображень...", wait=True)
+                except:
+                    status_msg = await channel.send(f"{user.mention} ⏳ Зчитую текст із зображень...")
+            else:
+                status_msg = await context.send("⏳ Зчитую текст із зображень...")
             
             # Використовуємо Gemini для OCR
             model = genai.GenerativeModel('gemini-2.5-flash')
@@ -78,10 +102,7 @@ class ActivityScanner(commands.Cog):
             names = list(set(all_names)) # Прибираємо дублікати
             
             if not names:
-                try:
-                    return await status_msg.edit(content="❌ Не вдалося знайти жодного дійсного імені на зображеннях.")
-                except discord.HTTPException:
-                    return await interaction.channel.send(f"{interaction.user.mention} ❌ Не вдалося знайти жодного дійсного імені на зображеннях.")
+                return await status_msg.edit(content=f"{user.mention} ❌ Не вдалося знайти жодного дійсного імені на зображеннях.")
                 
             try:
                 await status_msg.edit(content=f"⏳ Знайдено унікальних гравців: {len(names)}. Перевіряю активність (з кешуванням)... Це може зайняти певний час через ліміти API.")
@@ -202,17 +223,19 @@ class ActivityScanner(commands.Cog):
                 
             try:
                 await status_msg.edit(content=None, embed=embed)
-            except discord.HTTPException as e:
-                if e.code == 50027: # Invalid Webhook Token
-                    await interaction.channel.send(content=f"{interaction.user.mention}, звіт готовий:", embed=embed)
-                else:
-                    await interaction.channel.send(embed=embed)
+            except discord.HTTPException:
+                await channel.send(content=f"{user.mention}, звіт готовий:", embed=embed)
             
         except Exception as e:
             try:
-                await interaction.followup.send(f"❌ Сталася помилка при обробці: {e}")
-            except discord.HTTPException:
-                await interaction.channel.send(f"{interaction.user.mention} ❌ Сталася помилка при обробці: {e}")
+                if 'status_msg' in locals():
+                    await status_msg.edit(content=f"❌ Сталася помилка при обробці: {e}")
+                elif is_interaction:
+                    await context.followup.send(f"❌ Сталася помилка при обробці: {e}")
+                else:
+                    await context.send(f"❌ Сталася помилка при обробці: {e}")
+            except:
+                await channel.send(f"{user.mention} ❌ Сталася помилка при обробці: {e}")
 
 async def setup(bot):
     await bot.add_cog(ActivityScanner(bot))
