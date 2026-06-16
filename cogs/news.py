@@ -6,7 +6,10 @@ import aiohttp
 import asyncio
 import json
 import os
+import google.generativeai as genai
 from utils.data_handler import DB_FILE
+
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../config.json')
 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
@@ -105,10 +108,19 @@ class NewsCog(commands.Cog):
                             await self.save_news(news_id, title, url, date, item.get("feedname"))
                             
                             # Відправляємо в канал
+                            try:
+                                model = genai.GenerativeModel('gemini-2.5-flash')
+                                prompt = "Зроби коротке резюме цього оновлення/новини PUBG українською мовою. Виділи лише найважливіші зміни (нові функції, зброя, мапи, баланс). Опусти дрібні виправлення багів та неважливі деталі. Використовуй списки (bullet points) для зручності читання.\n\nТекст новини:"
+                                response = await asyncio.to_thread(model.generate_content, f"{prompt}\n{contents[:15000]}")
+                                summarized_contents = response.text
+                            except Exception as e:
+                                print(f"[NewsMonitor] Помилка Gemini API: {e}")
+                                summarized_contents = f"{contents[:500]}..."
+
                             embed = discord.Embed(
                                 title=title,
                                 url=url,
-                                description=f"{contents}\n\n[Читати повністю...]({url})",
+                                description=f"{summarized_contents}\n\n[Читати повністю в Steam]({url})",
                                 color=0xff9900
                             )
                             embed.set_author(name="PUBG: BATTLEGROUNDS Новини", icon_url="https://steamuserimages-a.akamaihd.net/ugc/2000216766347514930/AB13B4AD977119DDAFD9FD52A127CCDC6788CC25/")
@@ -144,10 +156,19 @@ class NewsCog(commands.Cog):
                         url = "https://store.steampowered.com/news/app/578080/"
                     contents = item.get("contents", "")
                     
+                    try:
+                        model = genai.GenerativeModel('gemini-2.5-flash')
+                        prompt = "Зроби коротке резюме цього оновлення/новини PUBG українською мовою. Виділи лише найважливіші зміни (нові функції, зброя, мапи, баланс). Опусти дрібні виправлення багів та неважливі деталі. Використовуй списки (bullet points) для зручності читання.\n\nТекст новини:"
+                        response = await asyncio.to_thread(model.generate_content, f"{prompt}\n{contents[:15000]}")
+                        summarized_contents = response.text
+                    except Exception as e:
+                        print(f"[News Command] Помилка Gemini API: {e}")
+                        summarized_contents = f"{contents[:500]}..."
+                    
                     embed = discord.Embed(
                         title=title,
                         url=url,
-                        description=f"{contents}\n\n[Читати повністю...]({url})",
+                        description=f"{summarized_contents}\n\n[Читати повністю в Steam]({url})",
                         color=0xff9900
                     )
                     embed.set_author(name="Останній патч / Новина", icon_url="https://steamuserimages-a.akamaihd.net/ugc/2000216766347514930/AB13B4AD977119DDAFD9FD52A127CCDC6788CC25/")
