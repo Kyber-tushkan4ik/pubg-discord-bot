@@ -18,6 +18,15 @@ class ActivityScanner(commands.Cog):
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
         # Кеш для зменшення запитів до API (зберігається в пам'яті до рестарту)
         self.cache = {} 
+        
+        self.ctx_menu = app_commands.ContextMenu(
+            name="🔍 Аналіз Активності",
+            callback=self.check_activity_context
+        )
+        self.bot.tree.add_command(self.ctx_menu)
+
+    async def cog_unload(self):
+        self.bot.tree.remove_command(self.ctx_menu.name, type=self.ctx_menu.type)
 
     @app_commands.command(name="check_activity", description="Перевірити активність гравців (до 5 скріншотів)")
     async def check_activity(self, interaction: discord.Interaction, image1: discord.Attachment, image2: discord.Attachment=None, image3: discord.Attachment=None, image4: discord.Attachment=None, image5: discord.Attachment=None):
@@ -30,7 +39,6 @@ class ActivityScanner(commands.Cog):
 
         await self.process_images(interaction, images)
 
-    @app_commands.context_menu(name="🔍 Аналіз Активності")
     async def check_activity_context(self, interaction: discord.Interaction, message: discord.Message):
         await interaction.response.defer(ephemeral=False)
         
