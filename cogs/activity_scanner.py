@@ -80,8 +80,8 @@ class ActivityScanner(commands.Cog):
             else:
                 status_msg = await context.send("⏳ Зчитую текст із зображень...")
             
-            # Використовуємо Gemini для OCR
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            # Використовуємо Gemini 1.5 для OCR, оскільки у 2.5 жорсткий ліміт 20 запитів на день
+            model = genai.GenerativeModel('gemini-1.5-flash')
             prompt = "Extract all player names from ALL the provided images. Return ONLY the names, each on a new line. Only return strings that match a standard PUBG username (letters, numbers, underscores, hyphens, max 16 chars). Exclude any extraneous text or interface elements. Combine all names into one list without duplicates."
             
             pil_images = []
