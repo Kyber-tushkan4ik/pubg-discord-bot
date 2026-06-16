@@ -82,16 +82,21 @@ class ActivityScanner(commands.Cog):
             
             # Використовуємо Gemini для OCR
             model = genai.GenerativeModel('gemini-2.5-flash')
-            prompt = "Extract all player names from this image. Return ONLY the names, each on a new line. Only return strings that match a standard PUBG username (letters, numbers, underscores, hyphens, max 16 chars). Exclude any extraneous text or interface elements."
+            prompt = "Extract all player names from ALL the provided images. Return ONLY the names, each on a new line. Only return strings that match a standard PUBG username (letters, numbers, underscores, hyphens, max 16 chars). Exclude any extraneous text or interface elements. Combine all names into one list without duplicates."
             
+            pil_images = []
             for img_attachment in images:
                 if not img_attachment.content_type or not img_attachment.content_type.startswith('image/'):
                     continue
                 
                 img_bytes = await img_attachment.read()
                 img = Image.open(io.BytesIO(img_bytes))
+                pil_images.append(img)
                 
-                response = await asyncio.to_thread(model.generate_content, [img, prompt])
+            if pil_images:
+                # Відправляємо всі фотографії в одному запиті, щоб не перевищити ліміт (5 запитів на хвилину)
+                content_payload = pil_images + [prompt]
+                response = await asyncio.to_thread(model.generate_content, content_payload)
                 
                 text = response.text
                 for line in text.split('\n'):
