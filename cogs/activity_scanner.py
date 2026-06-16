@@ -28,6 +28,21 @@ class ActivityScanner(commands.Cog):
         if not images:
             return await interaction.followup.send("❌ Будь ласка, завантажте хоча б одне зображення.")
 
+        await self.process_images(interaction, images)
+
+    @app_commands.context_menu(name="🔍 Аналіз Активності")
+    async def check_activity_context(self, interaction: discord.Interaction, message: discord.Message):
+        await interaction.response.defer(ephemeral=False)
+        
+        images = [attachment for attachment in message.attachments if attachment.content_type and attachment.content_type.startswith('image/')]
+        
+        if not images:
+            return await interaction.followup.send("❌ У цьому повідомленні немає зображень для аналізу.")
+            
+        await self.process_images(interaction, images)
+
+    async def process_images(self, interaction: discord.Interaction, images: list):
+
         try:
             all_names = []
             
