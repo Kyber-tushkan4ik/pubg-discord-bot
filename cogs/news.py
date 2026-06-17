@@ -109,7 +109,7 @@ class NewsCog(commands.Cog):
                             
                             # Відправляємо в канал
                             try:
-                                model = genai.GenerativeModel('gemini-2.5-flash')
+                                model = genai.GenerativeModel('gemini-1.5-flash-8b')
                                 prompt = "Зроби коротке резюме цього оновлення/новини PUBG українською мовою. Виділи лише найважливіші зміни (нові функції, зброя, мапи, баланс). Опусти дрібні виправлення багів та неважливі деталі. Використовуй списки (bullet points) для зручності читання.\n\nТекст новини:"
                                 response = await asyncio.to_thread(model.generate_content, f"{prompt}\n{contents[:15000]}")
                                 summarized_contents = response.text
@@ -157,7 +157,7 @@ class NewsCog(commands.Cog):
                     contents = item.get("contents", "")
                     
                     try:
-                        model = genai.GenerativeModel('gemini-2.5-flash')
+                        model = genai.GenerativeModel('gemini-1.5-flash-8b')
                         prompt = "Зроби коротке резюме цього оновлення/новини PUBG українською мовою. Виділи лише найважливіші зміни (нові функції, зброя, мапи, баланс). Опусти дрібні виправлення багів та неважливі деталі. Використовуй списки (bullet points) для зручності читання.\n\nТекст новини:"
                         response = await asyncio.to_thread(model.generate_content, f"{prompt}\n{contents[:15000]}")
                         summarized_contents = response.text
