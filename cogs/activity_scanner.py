@@ -30,7 +30,11 @@ class ActivityScanner(commands.Cog):
 
     @app_commands.command(name="check_activity", description="Перевірити активність гравців (до 5 скріншотів)")
     async def check_activity(self, interaction: discord.Interaction, image1: discord.Attachment, image2: discord.Attachment=None, image3: discord.Attachment=None, image4: discord.Attachment=None, image5: discord.Attachment=None):
-        await interaction.response.defer(ephemeral=False)
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=False)
+        except discord.HTTPException:
+            pass
         
         images = [img for img in [image1, image2, image3, image4, image5] if img is not None]
         
@@ -41,8 +45,9 @@ class ActivityScanner(commands.Cog):
 
     async def check_activity_context(self, interaction: discord.Interaction, message: discord.Message):
         try:
-            await interaction.response.defer(ephemeral=False)
-        except discord.errors.NotFound:
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=False)
+        except discord.HTTPException:
             pass # Якщо не встигли за 3 секунди, ігноруємо помилку і відправимо в канал
         
         images = [attachment for attachment in message.attachments if attachment.content_type and attachment.content_type.startswith('image/')]
