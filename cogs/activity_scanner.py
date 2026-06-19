@@ -42,6 +42,7 @@ class UntrackView(discord.ui.View):
                 print(f"Error editing view: {e}")
         return callback
 
+class ActivityScanner(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
