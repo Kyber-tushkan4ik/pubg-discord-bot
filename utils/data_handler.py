@@ -118,6 +118,13 @@ def init_db():
     except sqlite3.OperationalError:
         pass # Колонка вже існує
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tracked_players (
+            nickname TEXT PRIMARY KEY COLLATE NOCASE,
+            added_at INTEGER
+        )
+    ''')
+
     # Ініціалізація базової статистики зброї (за офіційними даними наближено для 2-го рівня броні)
     cursor.execute("SELECT count(*) FROM weapons")
     if cursor.fetchone()[0] == 0:
@@ -609,6 +616,51 @@ def clear_all_ideas_sync():
 
 async def clear_all_ideas():
     await asyncio.to_thread(clear_all_ideas_sync)
+
+# --- Activity Tracker ---
+def add_tracked_player_sync(nickname: str):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR IGNORE INTO tracked_players (nickname, added_at) 
+            VALUES (?, ?)
+        ''', (nickname.strip(), int(time.time() * 1000)))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DataHandler] Error adding tracked player: {e}")
+
+async def add_tracked_player(nickname: str):
+    await asyncio.to_thread(add_tracked_player_sync, nickname)
+
+def remove_tracked_player_sync(nickname: str):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM tracked_players WHERE nickname = ? COLLATE NOCASE", (nickname.strip(),))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DataHandler] Error removing tracked player: {e}")
+
+async def remove_tracked_player(nickname: str):
+    await asyncio.to_thread(remove_tracked_player_sync, nickname)
+
+def get_all_tracked_players_sync():
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT nickname FROM tracked_players")
+        rows = cursor.fetchall()
+        conn.close()
+        return [row[0] for row in rows]
+    except Exception as e:
+        print(f"[DataHandler] Error getting tracked players: {e}")
+        return []
+
+async def get_all_tracked_players():
+    return await asyncio.to_thread(get_all_tracked_players_sync)
 
 # Викликаємо ініціалізацію при імпорті модуля
 import time

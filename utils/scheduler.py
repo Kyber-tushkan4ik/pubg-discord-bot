@@ -254,6 +254,76 @@ async def send_monthly_report(client):
     embed.set_footer(text=f"Підсумки за {time.strftime('%B %Y')}")
     await report_ch.send(embed=embed)
 
+class PlayerWarningView(discord.ui.View):
+    def __init__(self, bot, owner_id=776154533742641174):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.owner_id = owner_id
+
+    @discord.ui.button(label="Так, скоро повернуся!", style=discord.ButtonStyle.success, custom_id="warn_yes")
+    async def btn_yes(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Чудово! Чекаємо тебе в грі. Якщо маєш питання, пиши власнику клану.", ephemeral=True)
+        self.disable_all_items()
+        await interaction.message.edit(view=self)
+        await self.notify_owner(interaction.user, "✅ планує повернутися і грати далі.")
+
+    @discord.ui.button(label="Ні, беру перерву / йду", style=discord.ButtonStyle.danger, custom_id="warn_no")
+    async def btn_no(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Зрозуміло. Дякуємо за відповідь! Якщо передумаєш, завжди раді.", ephemeral=True)
+        self.disable_all_items()
+        await interaction.message.edit(view=self)
+        await self.notify_owner(interaction.user, "❌ бере перерву або йде з клану.")
+
+    async def notify_owner(self, user, action_text):
+        try:
+            owner = await self.bot.fetch_user(self.owner_id)
+            if owner:
+                await owner.send(f"📬 Відповідь від {user.mention} ({user.name}): Гравець **{action_text}**")
+        except:
+            pass
+
+class OwnerWarningSelect(discord.ui.Select):
+    def __init__(self, bot, inactive_users):
+        self.bot = bot
+        options = []
+        for p, days in inactive_users[:25]: # Select max 25 options
+            options.append(discord.SelectOption(
+                label=p['pubgNickname'][:25], 
+                description=f"Відсутній {days} днів", 
+                value=str(p['userId'])
+            ))
+        super().__init__(placeholder="Оберіть гравця для попередження...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        target_id = int(self.values[0])
+        try:
+            target_user = await self.bot.fetch_user(target_id)
+            if target_user:
+                embed = discord.Embed(
+                    title="⚠️ Звернення від керівництва клану",
+                    description=(
+                        "Привіт! Ми помітили, що ти не грав(ла) у PUBG вже більше 15 днів.\n\n"
+                        "Чи плануєш ти продовжувати грати з нами найближчим часом?\n"
+                        f"Якщо у тебе виникли питання або проблеми, звертайся безпосередньо до <@{776154533742641174}>."
+                    ),
+                    color=0xE74C3C
+                )
+                view = PlayerWarningView(self.bot)
+                await target_user.send(embed=embed, view=view)
+                await interaction.response.send_message(f"✅ Попередження надіслано гравцю {target_user.mention}.", ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ Не вдалося знайти користувача.", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ Не вдалося надіслати повідомлення (в користувача закриті ПП).", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Помилка: {e}", ephemeral=True)
+
+class OwnerWarningView(discord.ui.View):
+    def __init__(self, bot, inactive_users):
+        super().__init__(timeout=None)
+        if inactive_users:
+            self.add_item(OwnerWarningSelect(bot, inactive_users))
+
 async def check_inactivity(client):
     """Перевіряє неактивність гравців та надсилає звіт власнику."""
     create_log("[INACTIVITY] Запуск перевірки неактивності гравців...")
@@ -382,8 +452,15 @@ async def check_inactivity(client):
                         value="\n".join(list_15[:25]) + ("\n...та інші" if len(list_15) > 25 else ""),
                         inline=False
                     )
-                    
-                await owner.send(embed=embed)
+                
+                # Відбираємо тільки тих, хто має userId (для відправки повідомлень)
+                warnable_users = []
+                for p, days in sorted(inactive_20 + inactive_15, key=lambda x: x[1], reverse=True):
+                    if p.get("userId") and not p.get("isExternal"):
+                        warnable_users.append((p, days))
+                        
+                view = OwnerWarningView(client, warnable_users) if warnable_users else None
+                await owner.send(embed=embed, view=view)
                 create_log(f"[INACTIVITY] Звіт надіслано власнику (20+ днів: {len(inactive_20)}, 15-19 днів: {len(inactive_15)})")
             else:
                 create_log("[INACTIVITY] Усі гравці активні (немає тих, хто не грав 15+ днів).")
@@ -692,19 +769,36 @@ async def process_single_player_matches(client: discord.Client, key, p, pubg_dat
                                 map_name = translate_map(m_attr.get("mapName", "PUBG"))
                                 
                                 is_squad = len(clan_winners) > 1
-                                title = '🍗 ПЕРЕМОГА СКВАДУ!' if is_squad else '🍗 ПЕРЕМОГА!'
-                                match_url = f"https://pubglookup.com/matches/{mid}"
+                                title = '🏆 ПЕРЕМОГА СКВАДУ! 🏆' if is_squad else '🏆 ПЕРЕМОГА! 🏆'
+                                
+                                # pubglookup.com/matches/{mid} gives 404 because of platform changes.
+                                # Linking to the player's op.gg profile instead as it's more reliable.
+                                winner_name_url = clan_winner_names[0] if clan_winner_names else ""
+                                match_url = f"https://pubg.op.gg/user/{winner_name_url}"
                                 
                                 embed = discord.Embed(
                                     title=title, 
                                     url=match_url,
-                                    description=f"Наші розносять лобі! 🚀\n\n**Тип матчу:** `{match_type_str}`\n**Режим:** `{nice_mode}`\n**Карта:** `{map_name}`\n\n" + "\n".join(clan_winners), 
-                                    color=0xFFCC00
+                                    description="🔥 **ЧЕРГОВИЙ ТОП-1 У НАШУ СКАРБНИЧКУ!** 🔥\nНаші бійці просто не залишили шансів ворогам!", 
+                                    color=0xFFD700
                                 )
-                                embed.add_field(name="🔗 Підтвердження", value=f"[Переглянути деталі на PUBG Lookup]({match_url})", inline=False)
-                                embed.set_footer(text="Офіційні дані PUBG API")
+                                
+                                # Дані про матч у вигляді зручної таблички (fields)
+                                embed.add_field(name="🌍 Карта", value=f"`{map_name}`", inline=True)
+                                embed.add_field(name="🎮 Режим", value=f"`{nice_mode}`", inline=True)
+                                embed.add_field(name="📊 Тип", value=f"`{match_type_str}`", inline=True)
+                                
+                                # Список переможців
+                                winners_text = "\n".join(clan_winners)
+                                embed.add_field(name="🎖️ Герої матчу", value=winners_text, inline=False)
+                                
+                                embed.add_field(name="🔗 Детальна статистика", value=f"[Переглянути профіль на PUBG.OP.GG]({match_url})", inline=False)
+                                
+                                # Можемо додати універсальну картинку перемоги (Winner Winner Chicken Dinner)
+                                embed.set_thumbnail(url="https://i.imgur.com/vHq0A6a.png") # Це золота іконка кубка/шлема (приклад)
+                                embed.set_footer(text="Офіційні дані PUBG API • Вітаємо переможців!", icon_url="https://i.imgur.com/K0cM88t.png")
         
-                                await win_channel.send(content=f"🎉 Вітаємо {' '.join(mentions)}!", embed=embed)
+                                await win_channel.send(content=f"🎉 **ВІТАЄМО** {' '.join(mentions)}! 🎉", embed=embed)
                                 names_str = ", ".join(clan_winner_names)
                                 create_log(f"[WIN] Перемога зафіксована для {names_str} (Матч: {mid})!")
                                 message_sent_for_this_match = True
