@@ -62,6 +62,13 @@ class PubgBot(commands.Bot):
 
     async def setup_hook(self):
         self.tree.on_error = self.global_app_command_error
+        
+        try:
+            from utils.scheduler import PlayerWarningView
+            self.add_view(PlayerWarningView(self))
+        except Exception as e:
+            print(f"Помилка реєстрації View: {e}")
+            
         # Тут будемо завантажувати cogs
         cogs_dir = os.path.join(os.path.dirname(__file__), 'cogs')
         if not os.path.exists(cogs_dir):
