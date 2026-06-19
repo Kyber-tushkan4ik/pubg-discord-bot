@@ -263,14 +263,16 @@ class PlayerWarningView(discord.ui.View):
     @discord.ui.button(label="Так, скоро повернуся!", style=discord.ButtonStyle.success, custom_id="warn_yes")
     async def btn_yes(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("Чудово! Чекаємо тебе в грі. Якщо маєш питання, пиши власнику клану.", ephemeral=True)
-        self.disable_all_items()
+        for child in self.children:
+            child.disabled = True
         await interaction.message.edit(view=self)
         await self.notify_owner(interaction.user, "✅ планує повернутися і грати далі.")
 
     @discord.ui.button(label="Ні, беру перерву / йду", style=discord.ButtonStyle.danger, custom_id="warn_no")
     async def btn_no(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("Зрозуміло. Дякуємо за відповідь! Якщо передумаєш, завжди раді.", ephemeral=True)
-        self.disable_all_items()
+        for child in self.children:
+            child.disabled = True
         await interaction.message.edit(view=self)
         await self.notify_owner(interaction.user, "❌ бере перерву або йде з клану.")
 
