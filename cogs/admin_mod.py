@@ -6,7 +6,7 @@ import os
 
 from utils.data_handler import get_data, save_data, get_settings, save_settings, delete_data
 from utils.pubg_api import get_player
-from utils.helpers import get_record_key, find_record, create_log, is_admin
+from utils.helpers import get_record_key, find_record, create_log, is_admin, is_owner
 from utils.moderation import add_warning, clear_warnings
 from utils.scheduler import check_recent_matches, update_stats_and_ranks, send_weekly_report, check_inactivity, process_single_player_matches, process_single_player_stats_and_ranks
 from utils.core import handle_success
@@ -14,9 +14,8 @@ import time
 import asyncio
 import shutil
 
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../config.json')
-with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-    CONFIG = json.load(f)
+from utils.config import get_config
+CONFIG = get_config()
 
 class AdminCog(commands.Cog):
     manage_tracking = app_commands.Group(name="manage_tracking", description="Керування відстеженням активності")
@@ -73,6 +72,7 @@ class AdminCog(commands.Cog):
                 create_log(f"[NICKNAME] Error for {target_user}: {e}")
                 
         except Exception as e:
+            create_log(f"[ADMIN_LINK ERROR] {target_user} ({nickname}): {e}")
             await interaction.followup.send("Сталася помилка. Перевірте API ключ.", ephemeral=True)
 
     @app_commands.command(name="adapt_finish", description="Завершити адаптацію для користувача вручну (Адмін)")
@@ -220,6 +220,15 @@ class AdminCog(commands.Cog):
                     "days": (now - last_seen) // (24 * 3600000),
                     "nickname": data.get("pubgNickname", member.name) if data else member.name
                 })
+
+        # Прибираємо тих, хто купив у крамниці імунітет від неактивності
+        from utils.data_handler import has_active_effect
+        immune_filtered = []
+        for u in inactive_users:
+            if await has_active_effect(str(u['member'].id), 'inactivity_immunity'):
+                continue
+            immune_filtered.append(u)
+        inactive_users = immune_filtered
 
         if not inactive_users:
             await interaction.followup.send(f"✅ Чудово! Немає учасників, які відсутні більше **{limit_days}** днів.")
@@ -721,13 +730,9 @@ class AdminCog(commands.Cog):
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @app_commands.command(name="db_backup", description="Створити резервну копію бази даних (Тільки для власника)")
+    @is_owner()
     async def db_backup(self, interaction: discord.Interaction):
-        """Створює копію бази даних та надсилає її в DM користувачеві. Обмежено по ID 776154533742641174."""
-        # Перевірка специфічного ID користувача
-        if str(interaction.user.id) != "776154533742641174":
-            await interaction.response.send_message("❌ У вас немає прав для використання цієї команди.", ephemeral=True)
-            return
-
+        """Створює копію бази даних та надсилає її в DM. Доступно лише власнику (config OWNER_ID)."""
         await interaction.response.defer(ephemeral=True)
         
         db_path = os.path.join(os.path.dirname(__file__), '../database.sqlite')
@@ -761,13 +766,9 @@ class AdminCog(commands.Cog):
 
     @app_commands.command(name="db_restore", description="Відновити базу даних з файлу (Тільки для власника)")
     @app_commands.describe(file="Файл бази даних .sqlite")
+    @is_owner()
     async def db_restore(self, interaction: discord.Interaction, file: discord.Attachment):
-        """Відновлює базу даних з прикріпленого файлу .sqlite. Обмежено по ID 776154533742641174."""
-        # Перевірка специфічного ID користувача
-        if str(interaction.user.id) != "776154533742641174":
-            await interaction.response.send_message("❌ У вас немає прав для використання цієї критичної команди.", ephemeral=True)
-            return
-
+        """Відновлює базу даних з прикріпленого файлу .sqlite. Доступно лише власнику (config OWNER_ID)."""
         await interaction.response.defer(ephemeral=True)
 
         if not file.filename.endswith(".sqlite"):
@@ -792,27 +793,19 @@ class AdminCog(commands.Cog):
 
 # --- Interactive View Components ---
 
-class AdminSelect(discord.ui.Select):
-    def __init__(self, bot):
-        options = [
-            discord.SelectOption(label="Головна", emoji="🏠", value="main", description="Статистика бота та огляд"),
-            discord.SelectOption(label="Активність", emoji="📈", value="activity", description="Стеження, неактивні, топи"),
-            discord.SelectOption(label="Гравці", emoji="👥", value="players", description="Link/Unlink, зовнішні гравці"),
-            discord.SelectOption(label="Модерація", emoji="🛡️", value="mod", description="Попередження, очищення"),
-            discord.SelectOption(label="Ознайомлення", emoji="👋", value="intro", description="Налаштування панелі, запрошення"),
-            discord.SelectOption(label="Система", emoji="⚙️", value="system", description="Дебаг, ранги, очищення ролей")
-        ]
-        super().__init__(placeholder="Оберіть категорію...", min_values=1, max_values=1, options=options, row=0)
-        self.bot = bot
+class AdminCategoryButton(discord.ui.Button):
+    def __init__(self, label, emoji, custom_id, row, current_category):
+        style = discord.ButtonStyle.primary if custom_id.replace("cat_", "") == current_category else discord.ButtonStyle.secondary
+        super().__init__(label=label, emoji=emoji, style=style, custom_id=custom_id, row=row)
 
     async def callback(self, interaction: discord.Interaction):
         view: 'AdminMenuView' = self.view
-        view.current_category = self.values[0]
+        view.current_category = self.custom_id.replace("cat_", "")
         await view.update_view(interaction)
 
 class AdminUserSelect(discord.ui.UserSelect):
     def __init__(self):
-        super().__init__(placeholder="Оберіть користувача для дій...", min_values=1, max_values=1, row=1)
+        super().__init__(placeholder="Оберіть користувача для дій...", min_values=1, max_values=1, row=2)
 
     async def callback(self, interaction: discord.Interaction):
         view: 'AdminMenuView' = self.view
@@ -820,7 +813,7 @@ class AdminUserSelect(discord.ui.UserSelect):
         await interaction.response.defer(ephemeral=True)
 
 class AdminButton(discord.ui.Button):
-    def __init__(self, label, style, custom_id, row=2, emoji=None):
+    def __init__(self, label, style, custom_id, row=3, emoji=None):
         super().__init__(label=label, style=style, custom_id=custom_id, row=row, emoji=emoji)
 
     async def callback(self, interaction: discord.Interaction):
@@ -834,7 +827,19 @@ class AdminMenuView(discord.ui.View):
         self.user = user
         self.current_category = "main"
         self.selected_user = None
-        self.add_item(AdminSelect(bot))
+        self._add_category_buttons()
+
+    def _add_category_buttons(self):
+        cats = [
+            ("Дашборд", "📊", "main", 0),
+            ("Активність", "🔥", "activity", 0),
+            ("Гравці", "👥", "players", 0),
+            ("Модерація", "🛡️", "mod", 1),
+            ("Привітання", "👋", "intro", 1),
+            ("Система", "⚙️", "system", 1)
+        ]
+        for label, emoji, val, row in cats:
+            self.add_item(AdminCategoryButton(label, emoji, f"cat_{val}", row, self.current_category))
 
     def get_main_embed(self, guild):
         user_data = get_data()
@@ -843,7 +848,7 @@ class AdminMenuView(discord.ui.View):
         
         embed = discord.Embed(
             title="📋 Меню команд Помічниці",
-            description="Оберіть **категорію** з меню нижче, щоб керувати ботом.",
+            description="Оберіть **категорію** за допомогою кнопок вище, щоб керувати ботом.",
             color=0x2f3136
         )
         if self.bot.user.avatar: embed.set_thumbnail(url=self.bot.user.avatar.url)
@@ -858,39 +863,38 @@ class AdminMenuView(discord.ui.View):
         return embed
 
     async def update_view(self, interaction: discord.Interaction):
-        # Очищуємо старі кнопки/селектори крім основного категорійного
-        for item in [i for i in self.children if not isinstance(i, AdminSelect)]:
-            self.remove_item(item)
+        self.clear_items()
+        self._add_category_buttons()
         
         embed = None
         if self.current_category == "main":
             embed = self.get_main_embed(interaction.guild)
         elif self.current_category == "activity":
-            embed = discord.Embed(title="📈 Адаптація та активність", description="Керування стеженням та перевірка неактивних.", color=0x3498db)
-            self.add_item(AdminButton("Топ активних", discord.ButtonStyle.primary, "top_active", emoji="🏆"))
-            self.add_item(AdminButton("Перевірка неактивних", discord.ButtonStyle.secondary, "warn_inactive", emoji="📨"))
+            embed = discord.Embed(title="🔥 Активність клану", description="Керування стеженням та перевірка неактивних.", color=0x3498db)
+            self.add_item(AdminButton("Топ активних", discord.ButtonStyle.primary, "top_active", emoji="🏆", row=3))
+            self.add_item(AdminButton("Перевірка неактивних", discord.ButtonStyle.secondary, "warn_inactive", emoji="📨", row=3))
         elif self.current_category == "players":
-            embed = discord.Embed(title="👥 Менеджмент гравців", description="**Інструкція:**\n1. Оберіть гравця\n2. Натисніть кнопку дії", color=0x2ecc71)
+            embed = discord.Embed(title="👥 Керування гравцями", description="**Інструкція:**\n1. Оберіть гравця\n2. Натисніть кнопку дії", color=0x2ecc71)
             self.add_item(AdminUserSelect())
-            self.add_item(AdminButton("Прив'язати", discord.ButtonStyle.success, "btn_link", row=2))
-            self.add_item(AdminButton("Відв'язати", discord.ButtonStyle.danger, "btn_unlink", row=2))
-            self.add_item(AdminButton("Додати зовнішнього", discord.ButtonStyle.secondary, "btn_add_ext", row=3))
+            self.add_item(AdminButton("Прив'язати", discord.ButtonStyle.success, "btn_link", row=3))
+            self.add_item(AdminButton("Відв'язати", discord.ButtonStyle.danger, "btn_unlink", row=3))
+            self.add_item(AdminButton("Додати зовнішнього", discord.ButtonStyle.secondary, "btn_add_ext", row=4))
         elif self.current_category == "mod":
             embed = discord.Embed(title="🛡️ Модерація", description="**Інструкція:**\n1. Оберіть гравця\n2. Видайте або очистіть варни", color=0xe74c3c)
             self.add_item(AdminUserSelect())
-            self.add_item(AdminButton("Видати Warn", discord.ButtonStyle.danger, "btn_warn"))
-            self.add_item(AdminButton("Очистити Warns", discord.ButtonStyle.secondary, "btn_clear_warns"))
+            self.add_item(AdminButton("Видати Warn", discord.ButtonStyle.danger, "btn_warn", row=3))
+            self.add_item(AdminButton("Очистити Warns", discord.ButtonStyle.secondary, "btn_clear_warns", row=3))
         elif self.current_category == "intro":
-            embed = discord.Embed(title="👋 Ознайомлення", description="**Інструкція:**\n1. Для надсилання DM **оберіть гравця**\n2. Натисніть кнопку дії", color=0x9b59b6)
+            embed = discord.Embed(title="👋 Панель привітань", description="**Інструкція:**\n1. Для надсилання DM **оберіть гравця**\n2. Натисніть кнопку дії", color=0x9b59b6)
             self.add_item(AdminUserSelect())
-            self.add_item(AdminButton("Встановити панель", discord.ButtonStyle.success, "btn_intro_setup", row=2))
-            self.add_item(AdminButton("Надіслати DM", discord.ButtonStyle.primary, "btn_send_intro", row=2))
+            self.add_item(AdminButton("Встановити панель", discord.ButtonStyle.success, "btn_intro_setup", row=3))
+            self.add_item(AdminButton("Надіслати DM", discord.ButtonStyle.primary, "btn_send_intro", row=3))
         elif self.current_category == "system":
-            embed = discord.Embed(title="⚙️ Система та Дебаг", description="**Інструкція:**\n1. Для дебагу **оберіть гравця**\n2. Натисніть кнопку", color=0x95a5a6)
+            embed = discord.Embed(title="⚙️ Системні налаштування", description="**Інструкція:**\n1. Для дебагу **оберіть гравця**\n2. Натисніть кнопку", color=0x95a5a6)
             self.add_item(AdminUserSelect())
-            self.add_item(AdminButton("Дебаг гравця", discord.ButtonStyle.primary, "btn_debug_player", row=2))
-            self.add_item(AdminButton("Міграція ролей", discord.ButtonStyle.danger, "btn_cleanup", row=2))
-            self.add_item(AdminButton("Ручний запуск", discord.ButtonStyle.secondary, "btn_debug_run", row=3))
+            self.add_item(AdminButton("Дебаг гравця", discord.ButtonStyle.primary, "btn_debug_player", row=3))
+            self.add_item(AdminButton("Міграція ролей", discord.ButtonStyle.danger, "btn_cleanup", row=3))
+            self.add_item(AdminButton("Ручний запуск", discord.ButtonStyle.secondary, "btn_debug_run", row=4))
 
         if self.selected_user:
             embed.add_field(name="🎯 Вибрано", value=f"{self.selected_user.mention}", inline=False)
@@ -971,6 +975,19 @@ class AdminAddExternalModal(discord.ui.Modal, title="Додати зовнішн
         await self.cog.add_external.callback(self.cog, interaction, self.nickname.value)
 
 class AdminWarnInactiveModal(discord.ui.Modal, title="Попередження неактивних"):
+    days = discord.ui.TextInput(label="Днів неактивності", default="14", min_length=1, max_length=3)
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+    async def on_submit(self, interaction: discord.Interaction):
+        try: d = int(self.days.value)
+        except: d = 14
+        await self.cog.warn_inactive.callback(self.cog, interaction, d, False)
+
+async def setup(bot):
+    await bot.add_cog(AdminCog(bot))
+    print("Loaded extension: admin_mod")
+dminWarnInactiveModal(discord.ui.Modal, title="Попередження неактивних"):
     days = discord.ui.TextInput(label="Днів неактивності", default="14", min_length=1, max_length=3)
     def __init__(self, cog):
         super().__init__()
