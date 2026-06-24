@@ -987,7 +987,8 @@ class AdminWarnInactiveModal(discord.ui.Modal, title="Попередження �
 async def setup(bot):
     await bot.add_cog(AdminCog(bot))
     print("Loaded extension: admin_mod")
-dminWarnInactiveModal(discord.ui.Modal, title="Попередження неактивних"):
+
+inWarnInactiveModal(discord.ui.Modal, title="Попередження неактивних"):
     days = discord.ui.TextInput(label="Днів неактивності", default="14", min_length=1, max_length=3)
     def __init__(self, cog):
         super().__init__()
