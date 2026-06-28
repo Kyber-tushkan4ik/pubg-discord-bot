@@ -38,6 +38,15 @@ def is_admin():
     """Декоратор для перевірки прав адміністратора."""
     return app_commands.check(is_admin_check)
 
+def is_owner_check(interaction: discord.Interaction) -> bool:
+    with open('config.json', 'r', encoding='utf-8') as f:
+        config = json.load(f)
+    return str(interaction.user.id) == str(config.get("OWNER_ID", "776154533742641174"))
+
+def is_owner():
+    """Декоратор для перевірки прав власника."""
+    return app_commands.check(is_owner_check)
+
 def create_log(message: str):
     """Логує повідомлення у консоль та файл з ротацією."""
     try:
