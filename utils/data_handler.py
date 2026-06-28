@@ -146,6 +146,44 @@ def init_db():
         print("[DataHandler] Initialized base weapons data.")
     
     
+    print("[DataHandler] Running legacy duplicate cleanup...")
+    cursor.execute("SELECT key, userId, jsonData FROM users")
+    all_users = cursor.fetchall()
+    
+    user_map = {}
+    for row in all_users:
+        k, uid, jdata = row[0], row[1], row[2]
+        if '-' in k:
+            user_map.setdefault(uid, {})['new'] = (k, jdata)
+        else:
+            user_map.setdefault(uid, {})['legacy'] = (k, jdata)
+            
+    to_delete = []
+    to_update = []
+    
+    for uid, data in user_map.items():
+        if 'legacy' in data and 'new' in data:
+            legacy_key, legacy_json_str = data['legacy']
+            new_key, new_json_str = data['new']
+            try:
+                l_json = json.loads(legacy_json_str) if legacy_json_str else {}
+                n_json = json.loads(new_json_str) if new_json_str else {}
+                
+                # Merge stats from legacy to new
+                for stat_k in ['kd', 'wins', 'rounds', 'totalKills', 'avgDamage', 'weeklyWins', 'weeklyKills', 'monthlyWins', 'monthlyKills', 'lastMatchDate', 'lastCheckedMatchId', 'lastPubgSeen']:
+                    if stat_k in l_json:
+                        n_json[stat_k] = l_json[stat_k]
+                
+                to_delete.append((legacy_key,))
+                to_update.append((json.dumps(n_json), new_key))
+            except Exception as e:
+                print(f"[DataHandler] Error merging duplicate for {uid}: {e}")
+                
+    if to_delete:
+        cursor.executemany("DELETE FROM users WHERE key = ?", to_delete)
+        cursor.executemany("UPDATE users SET jsonData = ? WHERE key = ?", to_update)
+        print(f"[DataHandler] Cleaned up {len(to_delete)} legacy duplicates.")
+    
     print("[DataHandler] Loading data from SQLite...")
     cursor.execute("SELECT * FROM users")
     rows = cursor.fetchall()
